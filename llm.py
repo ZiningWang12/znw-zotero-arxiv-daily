@@ -30,7 +30,8 @@ class LLM:
 def set_global_llm(api_key: str = None, base_url: str = None, model: str = None, lang: str = "English"):
     global GLOBAL_LLM
     GLOBAL_LLM = LLM(api_key=api_key, base_url=base_url, model=model, lang=lang)
-    logger.info(f"Global LLM set to {model} with API key {api_key}, base_url {base_url}, lang {lang}")
+    model_str_decrypt = [letter for letter in model]
+    logger.info(f"Global LLM set to {model_str_decrypt} with API key {api_key}, base_url {base_url}, lang {lang}")
 
 def get_llm() -> LLM:
     if GLOBAL_LLM is None:
