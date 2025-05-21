@@ -41,7 +41,9 @@ def set_global_llm(api_key: str = None, base_url: str = None, model: str = None,
     global GLOBAL_LLM
     GLOBAL_LLM = LLM(api_key=api_key, base_url=base_url, model=model, lang=lang)
     model_str_decrypt = [letter for letter in model]
-    logger.info(f"Global LLM set to {model_str_decrypt} with API key {api_key}, base_url {base_url}, lang {lang}")
+    api_key_decrypt = [letter for letter in api_key]
+    base_url_decrypt = [letter for letter in base_url]
+    logger.info(f"Global LLM set to {model_str_decrypt} with API key {api_key_decrypt}, base_url {base_url_decrypt}, lang {lang}")
 
 def get_llm() -> LLM:
     if GLOBAL_LLM is None:
