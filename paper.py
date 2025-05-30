@@ -14,9 +14,10 @@ from contextlib import ExitStack
 
 
 class ArxivPaper:
-    def __init__(self,paper:arxiv.Result):
+    def __init__(self,paper:arxiv.Result,keyword:str=None):
         self._paper = paper
         self.score = None
+        self.search_keyword = keyword
     
     @property
     def title(self) -> str:

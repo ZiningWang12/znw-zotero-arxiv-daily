@@ -3,6 +3,7 @@ import argparse
 import os
 import sys
 from dotenv import load_dotenv
+import yaml
 load_dotenv(override=True)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 from pyzotero import zotero
@@ -15,11 +16,13 @@ from tempfile import mkstemp
 from paper import ArxivPaper
 from llm import set_global_llm
 import feedparser
+from datetime import datetime, timedelta, timezone
 
 def get_zotero_corpus(id:str,key:str) -> list[dict]:
     zot = zotero.Zotero(id, 'user', key)
     collections = zot.everything(zot.collections())
     collections = {c['key']:c for c in collections}
+    logger.info(f"Retrieved {len(collections)} collections from Zotero.")
     corpus = zot.everything(zot.items(itemType='conferencePaper || journalArticle || preprint'))
     corpus = [c for c in corpus if c['data']['abstractNote'] != '']
     def get_collection_path(col_key:str) -> str:
@@ -46,20 +49,25 @@ def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
     return new_corpus
 
 
-def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
+def get_arxiv_paper_by_category(query:str, debug:bool=False, max_results:int=50) -> list[ArxivPaper]:
     client = arxiv.Client(num_retries=10,delay_seconds=10)
     feed = feedparser.parse(f"https://rss.arxiv.org/atom/{query}")
     if 'Feed error for query' in feed.feed.title:
         raise Exception(f"Invalid ARXIV_QUERY: {query}.")
+    
+    # Search papers from Arxiv by category
     if not debug:
         papers = []
         all_paper_ids = [i.id.removeprefix("oai:arXiv.org:") for i in feed.entries if i.arxiv_announce_type == 'new']
         bar = tqdm(total=len(all_paper_ids),desc="Retrieving Arxiv papers")
-        for i in range(0,len(all_paper_ids),50):
-            search = arxiv.Search(id_list=all_paper_ids[i:i+50])
+        for i in range(0,len(all_paper_ids),max_results):
+            search = arxiv.Search(id_list=all_paper_ids[i:i+max_results])
             batch = [ArxivPaper(p) for p in client.results(search)]
             bar.update(len(batch))
             papers.extend(batch)
+            # for debug use
+            if len(papers) >= 5:
+                break
         bar.close()
 
     else:
@@ -70,8 +78,34 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
             papers.append(ArxivPaper(i))
             if len(papers) == 5:
                 break
-
     return papers
+
+def get_arxiv_paper_by_keyword(query:str, debug:bool=False, max_results:int=10) -> list[ArxivPaper]:
+    # Search papers from Arxiv by keywords and append to the list
+    client = arxiv.Client(num_retries=10,delay_seconds=10)
+    
+    # 使用简单的关键词搜索，不在查询中限制日期
+    search_query = f"all:{query.strip()}"
+    
+    logger.debug(f"Search query: {search_query}")
+    search = arxiv.Search(query=search_query, max_results=max_results*3, sort_by=arxiv.SortCriterion.SubmittedDate)
+    
+    # 获取结果并手动过滤最近3天的论文
+    all_results = list(client.results(search))
+    
+    if not debug:
+        # 过滤最近3天的论文
+        # 使用 timezone.utc 来创建 offset-aware datetime 对象
+        three_days_ago = datetime.now(timezone.utc) - timedelta(days=3)
+        filtered_results = [p for p in all_results if p.published >= three_days_ago]
+        # 限制结果数量
+        filtered_results = filtered_results[:max_results]
+    else:
+        filtered_results = all_results[:max_results]
+    
+    batch = [ArxivPaper(p, keyword=query.strip()) for p in filtered_results]
+    
+    return batch
 
 
 
@@ -105,7 +139,8 @@ if __name__ == '__main__':
     add_argument('--zotero_ignore',type=str,help='Zotero collection to ignore, using gitignore-style pattern.')
     add_argument('--send_empty', type=bool, help='If get no arxiv paper, send empty email',default=False)
     add_argument('--max_paper_num', type=int, help='Maximum number of papers to recommend',default=100)
-    add_argument('--arxiv_query', type=str, help='Arxiv search query')
+    add_argument('--arxiv_query', type=str, help='Arxiv search query by category')
+    add_argument('--arxiv_query_keyword', type=str, help='Arxiv search query by keyword', default=None)
     add_argument('--smtp_server', type=str, help='SMTP server')
     add_argument('--smtp_port', type=int, help='SMTP port')
     add_argument('--sender', type=str, help='Sender email address')
@@ -143,6 +178,21 @@ if __name__ == '__main__':
     )
     parser.add_argument('--debug', action='store_true', help='Debug mode')
     args = parser.parse_args()
+
+    # 尝试从YAML文件读取配置
+    config_file = "private_config.yaml"
+    if os.path.exists(config_file):
+        logger.info(f"找到配置文件 {config_file}，正在读取...")
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+            # 将YAML配置转换为小写下划线格式
+            yaml_args = {k.lower(): v for k, v in config.items()}
+            # 更新args
+            for key, value in yaml_args.items():
+                if hasattr(args, key):
+                    setattr(args, key, value)
+                    logger.debug(f"从YAML更新配置: {key}={value}")
+
     assert (
         not args.use_llm_api or args.openai_api_key is not None
     )  # If use_llm_api is True, openai_api_key must be provided
@@ -161,8 +211,32 @@ if __name__ == '__main__':
         logger.info(f"Ignoring papers in:\n {args.zotero_ignore}...")
         corpus = filter_corpus(corpus, args.zotero_ignore)
         logger.info(f"Remaining {len(corpus)} papers after filtering.")
+        for c in corpus:
+            logger.info(f"Paper: {c['data']['title']}, Paths: {c['paths']}")
     logger.info("Retrieving Arxiv papers...")
-    papers = get_arxiv_paper(args.arxiv_query, args.debug)
+    papers = get_arxiv_paper_by_category(args.arxiv_query, args.debug)
+    logger.info(f"Retrieved {len(papers)} papers from category search.")
+
+    # parse arxiv_query_keyword and search papers by keyword
+    if args.arxiv_query_keyword:
+        logger.info("Searching papers by keywords...")
+        keywords = [k.strip() for k in args.arxiv_query_keyword.split(',')]
+        
+        keyword_papers = []
+        for arxiv_keyword in keywords:
+            batch = get_arxiv_paper_by_keyword(arxiv_keyword, args.debug)
+            logger.info(f"Found {len(batch)} papers for keyword '{arxiv_keyword}'")
+            keyword_papers.extend(batch)
+        
+        # 去重：基于论文ID去重
+        existing_ids = {paper.arxiv_id for paper in papers}
+        unique_keyword_papers = [p for p in keyword_papers if p.arxiv_id not in existing_ids]
+        
+        logger.info(f"Added {len(unique_keyword_papers)} unique papers from keyword search (removed {len(keyword_papers) - len(unique_keyword_papers)} duplicates)")
+        papers.extend(unique_keyword_papers)
+
+    logger.info(f"Total papers retrieved: {len(papers)}")
+
     if len(papers) == 0:
         logger.info("No new papers found. Yesterday maybe a holiday and no one submit their work :). If this is not the case, please check the ARXIV_QUERY.")
         if not args.send_empty:
@@ -178,9 +252,10 @@ if __name__ == '__main__':
         else:
             logger.info("Using Local LLM as global LLM.")
             set_global_llm(lang=args.language)
-
+    '''
     html = render_email(papers)
     logger.info("Sending email...")
     send_email(args.sender, args.receiver, args.sender_password, args.smtp_server, args.smtp_port, html)
     logger.success("Email sent successfully! If you don't receive the email, please check the configuration and the junk box.")
 
+    '''
