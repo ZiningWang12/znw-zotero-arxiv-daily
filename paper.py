@@ -198,8 +198,10 @@ class ArxivPaper:
             possible_regions = [
                 # 标准格式：author到maketitle
                 r'\\author.*?\\maketitle',
-                # 文档开始到摘要
+                # 文档开始到摘要（扩大搜索范围）
                 r'\\begin{document}.*?\\begin{abstract}', 
+                # 标题页区域：从title到section或abstract
+                r'\\title.*?(?=\\section|\\begin{abstract})',
                 # author到date之间
                 r'\\author.*?\\date',
                 # author到title之间（有些论文author在title后面）
@@ -212,8 +214,10 @@ class ArxivPaper:
                 r'\\footnotetext.*?(?=\\section|\\begin{abstract}|\\maketitle|$)',
                 # 查找包含"are with"/"is with"模式的区域（作者机构常用表达）
                 r'.*?(?:are with|is with|affiliated with).*?(?=\\section|\\begin{abstract}|\\maketitle|$)',
-                # 整个文档前2000字符（扩大搜索范围）
-                r'^.{0,2000}',
+                # 查找标题页作者信息块（新增：处理A4Bench这种格式）
+                r'(?:^|\\title).*?(?:university|institute|college|lab|department|shanghai|beijing|tsinghua|stanford|mit|google|microsoft|openai|deepmind).*?(?=\\section|\\begin{abstract})',
+                # 整个文档前3000字符（进一步扩大搜索范围）
+                r'^.{0,3000}',
                 # 查找包含email地址的区域（通常在作者信息附近）
                 r'.*?@.*?\..*?(?=\\section|\\begin{abstract})',
                 # 查找包含university/institute关键词的区域
@@ -237,7 +241,14 @@ class ArxivPaper:
                             # 增加脚注中常见的表达方式
                             'are with', 'is with', 'affiliated with', 'belong to',
                             # 增加更多机构类型
-                            'research', 'laboratory', 'faculty', 'division'
+                            'research', 'laboratory', 'faculty', 'division',
+                            # 增加常见地理位置和机构名称
+                            'shanghai', 'beijing', 'china', 'usa', 'uk', 'japan', 'singapore',
+                            'tsinghua', 'peking', 'fudan', 'sjtu', 'stanford', 'mit', 'harvard', 'berkeley',
+                            'google', 'microsoft', 'openai', 'deepmind', 'meta', 'nvidia', 'apple',
+                            'carnegie', 'mellon', 'caltech', 'princeton', 'yale', 'columbia',
+                            # 欧洲常见机构关键词  
+                            'cambridge', 'oxford', 'london', 'edinburgh', 'eth', 'epfl'
                         ]
                         
                         if any(keyword in candidate_region.lower() for keyword in affiliation_keywords):
@@ -253,7 +264,11 @@ class ArxivPaper:
                 return None
                 
             # 清理和预处理文本
-            information_region = re.sub(r'\\[a-zA-Z]+\*?(\[.*?\])?\{.*?\}', ' ', information_region)  # 移除LaTeX命令
+            # 更温和的清理方式，保留更多有用信息
+            information_region = re.sub(r'\\(?:section|subsection|subsubsection)\{.*?\}', ' ', information_region)  # 移除章节标题
+            information_region = re.sub(r'\\(?:cite|ref|label)\{.*?\}', ' ', information_region)  # 移除引用标签
+            information_region = re.sub(r'\\(?:textbf|textit|emph)\{(.*?)\}', r'\1', information_region)  # 保留格式化文本内容
+            information_region = re.sub(r'\\[a-zA-Z]+\*?(\[.*?\])?\{([^{}]*)\}', r'\2', information_region)  # 移除LaTeX命令但保留内容
             information_region = re.sub(r'\{|\}', ' ', information_region)  # 移除大括号
             information_region = re.sub(r'\\\\|\n+', ' ', information_region)  # 移除换行符和\\
             information_region = re.sub(r'\s+', ' ', information_region).strip()  # 标准化空格
@@ -264,6 +279,7 @@ The author information may be in different formats:
 1. Standard LaTeX author blocks
 2. Footnotes with author abbreviations (e.g., "W. F and D. Zhang are with...")
 3. Mixed formats with affiliations in footnotes
+4. Direct listing format (e.g., "Author Name\\nemail@domain.com\\nUniversity Name\\nCity, Country")
 
 Return a Python list of unique affiliations, like ['Stanford University', 'MIT', 'Google Research'].
 
@@ -272,9 +288,11 @@ Rules:
 2. Remove duplicates
 3. If no affiliations found, return []
 4. Focus on universities, companies, research institutions
-5. Ignore personal email domains
+5. Ignore personal email domains and email addresses
 6. Handle abbreviations in footnotes (e.g., "W. F and D. Zhang are with Imperial College London")
 7. Look for patterns like "are with", "is with", "affiliated with"
+8. In direct listing format, institutions usually appear after email addresses
+9. Common institution types: University, Institute, College, Lab, AI Lab, Research Center, Company
 
 Author information:
 {information_region[:4000]}"""  # 限制长度避免token过多

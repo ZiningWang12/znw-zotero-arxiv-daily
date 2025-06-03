@@ -48,12 +48,12 @@ def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
     os.remove(filename)
     return new_corpus
 
-def filter_recent_papers(papers: list, days: int = 7) -> list:
+def filter_recent_papers(papers: list, days: int = 3) -> list:
     """过滤最近N天的论文
     
     Args:
         papers: 论文列表
-        days: 天数，默认7天
+        days: 天数
         
     Returns:
         过滤后的论文列表
@@ -79,9 +79,6 @@ def get_arxiv_paper_by_category(query:str, debug:bool=False, max_results:int=50)
             batch = [ArxivPaper(p) for p in filtered_results]
             bar.update(len(batch))
             papers.extend(batch)
-            # for debug use
-            if len(papers) >= 5:
-                break
         bar.close()
     else:
         logger.debug("Retrieve 5 arxiv papers regardless of the date.")
@@ -105,7 +102,10 @@ def get_arxiv_paper_by_keyword(query:str, debug:bool=False, max_results:int=10) 
     
     # 获取结果并过滤
     all_results = list(client.results(search))
-    filtered_results = filter_recent_papers(all_results)[:max_results]
+    filtered_results = filter_recent_papers(all_results)
+    # sort by published date and truncate to max_results
+    filtered_results.sort(key=lambda x: x.published, reverse=True)
+    filtered_results = filtered_results[:max_results]
     
     return [ArxivPaper(p, keyword=query.strip()) for p in filtered_results]
 
@@ -265,8 +265,9 @@ if __name__ == '__main__':
         logger.info(f"Added {len(unique_keyword_papers)} unique papers from keyword search (removed {len(keyword_papers) - len(unique_keyword_papers)} duplicates)")
         papers.extend(unique_keyword_papers)
 
-    # 去重papers，基于arxiv_id
+    # 去重papers，基于arxiv_id, 并按发布时间排序
     papers = list(set(papers))
+    papers.sort(key=lambda x: x.published, reverse=True)
     logger.info(f"Total papers retrieved: {len(papers)}")
 
     # 设置LLM（在rerank之前）
@@ -293,4 +294,5 @@ if __name__ == '__main__':
     send_email(args.sender, args.receiver, args.sender_password, args.smtp_server, args.smtp_port, html)
     logger.success("Email sent successfully! If you don't receive the email, please check the configuration and the junk box.")
 
+    
     
