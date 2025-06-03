@@ -48,6 +48,18 @@ def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
     os.remove(filename)
     return new_corpus
 
+def filter_recent_papers(papers: list, days: int = 7) -> list:
+    """过滤最近N天的论文
+    
+    Args:
+        papers: 论文列表
+        days: 天数，默认7天
+        
+    Returns:
+        过滤后的论文列表
+    """
+    recent_days = datetime.now(timezone.utc) - timedelta(days=days)
+    return [p for p in papers if p.published >= recent_days]
 
 def get_arxiv_paper_by_category(query:str, debug:bool=False, max_results:int=50) -> list[ArxivPaper]:
     client = arxiv.Client(num_retries=10,delay_seconds=10)
@@ -62,14 +74,15 @@ def get_arxiv_paper_by_category(query:str, debug:bool=False, max_results:int=50)
         bar = tqdm(total=len(all_paper_ids),desc="Retrieving Arxiv papers")
         for i in range(0,len(all_paper_ids),max_results):
             search = arxiv.Search(id_list=all_paper_ids[i:i+max_results])
-            batch = [ArxivPaper(p) for p in client.results(search)]
+            results = list(client.results(search))
+            filtered_results = filter_recent_papers(results)
+            batch = [ArxivPaper(p) for p in filtered_results]
             bar.update(len(batch))
             papers.extend(batch)
             # for debug use
             if len(papers) >= 5:
                 break
         bar.close()
-
     else:
         logger.debug("Retrieve 5 arxiv papers regardless of the date.")
         search = arxiv.Search(query='cat:cs.AI', sort_by=arxiv.SortCriterion.SubmittedDate)
@@ -90,24 +103,11 @@ def get_arxiv_paper_by_keyword(query:str, debug:bool=False, max_results:int=10) 
     logger.debug(f"Search query: {search_query}")
     search = arxiv.Search(query=search_query, max_results=max_results*3, sort_by=arxiv.SortCriterion.SubmittedDate)
     
-    # 获取结果并手动过滤最近3天的论文
+    # 获取结果并过滤
     all_results = list(client.results(search))
+    filtered_results = filter_recent_papers(all_results)[:max_results]
     
-    if not debug:
-        # 过滤最近3天的论文
-        # 使用 timezone.utc 来创建 offset-aware datetime 对象
-        three_days_ago = datetime.now(timezone.utc) - timedelta(days=3)
-        filtered_results = [p for p in all_results if p.published >= three_days_ago]
-        # 限制结果数量
-        filtered_results = filtered_results[:max_results]
-    else:
-        filtered_results = all_results[:max_results]
-    
-    batch = [ArxivPaper(p, keyword=query.strip()) for p in filtered_results]
-    
-    return batch
-
-
+    return [ArxivPaper(p, keyword=query.strip()) for p in filtered_results]
 
 parser = argparse.ArgumentParser(description='Recommender system for academic papers')
 
@@ -146,6 +146,7 @@ if __name__ == '__main__':
     add_argument('--sender', type=str, help='Sender email address')
     add_argument('--receiver', type=str, help='Receiver email address')
     add_argument('--sender_password', type=str, help='Sender email password')
+    add_argument('--research_interests', type=str, help='Research interests', default=None)
     add_argument(
         "--use_llm_api",
         type=bool,
@@ -179,19 +180,49 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true', help='Debug mode')
     args = parser.parse_args()
 
-    # 尝试从YAML文件读取配置
-    config_file = "private_config.yaml"
-    if os.path.exists(config_file):
+    def parse_research_interests(interests):
+        """解析研究兴趣，支持字符串和列表格式"""
+        if not interests:
+            return None
+        if isinstance(interests, str):
+            return [interest.strip() for interest in interests.split(',')]
+        return interests
+
+    def load_config_from_yaml(config_file="private_config.yaml"):
+        """从YAML文件加载配置"""
+        if not os.path.exists(config_file):
+            return {}
+        
         logger.info(f"找到配置文件 {config_file}，正在读取...")
         with open(config_file, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
-            # 将YAML配置转换为小写下划线格式
-            yaml_args = {k.lower(): v for k, v in config.items()}
-            # 更新args
-            for key, value in yaml_args.items():
-                if hasattr(args, key):
-                    setattr(args, key, value)
-                    logger.debug(f"从YAML更新配置: {key}={value}")
+            return yaml.safe_load(f) or {}
+
+    # 读取配置
+    yaml_config = load_config_from_yaml()
+    llm_config = yaml_config.get('LLM_RECOMMENDER', {})
+    
+    # 从YAML配置中覆盖参数值（YAML优先级高于命令行参数）
+    if yaml_config:
+        for key, value in yaml_config.items():
+            arg_name = key.lower()
+            if hasattr(args, arg_name):
+                setattr(args, arg_name, value)
+    
+    # 研究兴趣优先级：YAML > 命令行参数
+    research_interests = (
+        parse_research_interests(llm_config.get('RESEARCH_INTERESTS')) or
+        parse_research_interests(args.research_interests)
+    )
+    
+    # 合并最终配置
+    llm_recommender_config = {
+        'research_interests': research_interests,
+        'corpus_batch_size': llm_config.get('CORPUS_BATCH_SIZE', 20),
+        'candidate_batch_size': llm_config.get('CANDIDATE_BATCH_SIZE', 8),
+        'keyword_bonus': llm_config.get('KEYWORD_BONUS', 2.0),
+        'default_score': llm_config.get('DEFAULT_SCORE', 5.0)
+    }
+    logger.info(f"读取LLM推荐配置: {llm_recommender_config}")
 
     assert (
         not args.use_llm_api or args.openai_api_key is not None
@@ -231,11 +262,20 @@ if __name__ == '__main__':
         # 去重：基于论文ID去重
         existing_ids = {paper.arxiv_id for paper in papers}
         unique_keyword_papers = [p for p in keyword_papers if p.arxiv_id not in existing_ids]
-        
         logger.info(f"Added {len(unique_keyword_papers)} unique papers from keyword search (removed {len(keyword_papers) - len(unique_keyword_papers)} duplicates)")
         papers.extend(unique_keyword_papers)
 
+    # 去重papers，基于arxiv_id
+    papers = list(set(papers))
     logger.info(f"Total papers retrieved: {len(papers)}")
+
+    # 设置LLM（在rerank之前）
+    if args.use_llm_api:
+        logger.info("Using OpenAI API as global LLM.")
+        set_global_llm(api_key=args.openai_api_key, base_url=args.openai_api_base, model=args.model_name, lang=args.language)
+    else:
+        logger.info("Using Local LLM as global LLM.")
+        set_global_llm(lang=args.language)
 
     if len(papers) == 0:
         logger.info("No new papers found. Yesterday maybe a holiday and no one submit their work :). If this is not the case, please check the ARXIV_QUERY.")
@@ -243,19 +283,14 @@ if __name__ == '__main__':
           exit(0)
     else:
         logger.info("Reranking papers...")
-        papers = rerank_paper(papers, corpus)
+        # 使用LLM进行智能推荐，传递配置参数
+        papers = rerank_paper(papers, corpus, use_llm=args.use_llm_api, llm_config=llm_recommender_config)
         if args.max_paper_num != -1:
             papers = papers[:args.max_paper_num]
-        if args.use_llm_api:
-            logger.info("Using OpenAI API as global LLM.")
-            set_global_llm(api_key=args.openai_api_key, base_url=args.openai_api_base, model=args.model_name, lang=args.language)
-        else:
-            logger.info("Using Local LLM as global LLM.")
-            set_global_llm(lang=args.language)
-    '''
+    
     html = render_email(papers)
     logger.info("Sending email...")
     send_email(args.sender, args.receiver, args.sender_password, args.smtp_server, args.smtp_port, html)
     logger.success("Email sent successfully! If you don't receive the email, please check the configuration and the junk box.")
 
-    '''
+    

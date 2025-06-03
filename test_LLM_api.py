@@ -37,7 +37,6 @@ try:
         temperature=0.7,
     )
 
-    print("\nOpenAI 库 API 调用成功！")
     print("来自模型的回应:")
     print(chat_completion.choices[0].message.content)
 

@@ -1,0 +1,47 @@
+# Zotero配置
+ZOTERO_ID: "YOUR_ZOTERO_USER_ID"  # 你的Zotero用户ID
+ZOTERO_KEY: "YOUR_ZOTERO_API_KEY"  # Zotero API密钥
+ZOTERO_IGNORE: |
+  # 使用gitignore风格的语法指定要忽略的Zotero文件夹
+  # 例如：
+  # Blog/**
+  # CV/**
+  # !CV/Important  # 使用!表示不忽略特定子文件夹
+
+# Arxiv查询配置
+ARXIV_QUERY: "cs.AI+cs.CV+cs.LG+cs.CL+cs.RO"  # 目标arxiv论文类别
+ARXIV_QUERY_KEYWORD: |
+  # 每行一个关键词，用逗号分隔
+  # 例如：
+  # Embodied Agent, Robot Manipulation
+  # Vision-Language Model, Multimodal Learning
+
+# 邮件服务器配置
+SMTP_SERVER: "smtp.example.com"  # SMTP服务器地址
+SMTP_PORT: 465  # SMTP服务器端口
+SENDER: "your.email@example.com"  # 发件人邮箱
+SENDER_PASSWORD: "YOUR_EMAIL_PASSWORD"  # 发件人密码/授权码
+RECEIVER: "receiver@example.com"  # 收件人邮箱
+
+# 可选配置
+MAX_PAPER_NUM: 15  # 邮件中展示的最大论文数量，-1表示展示所有论文
+SEND_EMPTY: false  # 是否在没有新论文时发送空邮件
+
+# LLM配置
+USE_LLM_API: 1  # 是否使用云LLM API（0：使用本地LLM，1：使用API）
+OPENAI_API_KEY: "YOUR_LLM_API_KEY"  # LLM API密钥
+OPENAI_API_BASE: "https://api.example.com/v1"  # LLM API基础URL
+MODEL_NAME: "gemini-pro"  # 使用的模型名称
+
+# LLM推荐算法配置
+LLM_RECOMMENDER:
+  # 研究兴趣领域（用逗号分隔的字符串）
+  RESEARCH_INTERESTS: "embodied AI, robotics, world model, multimodal learning, vision-language models, robot learning, reinforcement learning, natural language processing, robot manipulation, robot navigation, imitation learning, robot grasp, vision-language-action model"
+  
+  # 批处理配置
+  CORPUS_BATCH_SIZE: 20  # 用于参考的历史论文数量
+  CANDIDATE_BATCH_SIZE: 10  # 每批处理的候选论文数量
+  
+  # 评分配置
+  KEYWORD_BONUS: 1.0  # 关键词匹配论文的额外加分
+  DEFAULT_SCORE: 5.0  # API调用失败时的默认分数 
