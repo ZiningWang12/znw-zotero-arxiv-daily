@@ -1,0 +1,519 @@
+[
+  {
+    "name": "Long Chen",
+    "papers": 4,
+    "roles": {
+      "通讯作者": 2,
+      "二作": 2
+    },
+    "years": [
+      "2024",
+      "2025"
+    ],
+    "field": "Robotics/general VLN"
+  },
+  {
+    "name": "Noah D. Goodman",
+    "papers": 3,
+    "roles": {
+      "通讯作者": 3
+    },
+    "years": [
+      "2023",
+      "2024",
+      "2025"
+    ],
+    "field": "Large_Language_Model/RL&COT"
+  },
+  {
+    "name": "Xiaosong Jia",
+    "papers": 3,
+    "roles": {
+      "一作": 2,
+      "二作": 1
+    },
+    "years": [
+      "2023",
+      "2024"
+    ],
+    "field": "Large_Language_Model/benchmark"
+  },
+  {
+    "name": "Hongyang Li",
+    "papers": 3,
+    "roles": {
+      "通讯作者": 3
+    },
+    "years": [
+      "2023",
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Yue Wang",
+    "papers": 3,
+    "roles": {
+      "二作": 1,
+      "通讯作者": 2
+    },
+    "years": [
+      "2023",
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Shen Nie",
+    "papers": 2,
+    "roles": {
+      "二作": 1,
+      "一作": 1
+    },
+    "years": [
+      "2025"
+    ],
+    "field": "Large_Language_Model/diffusionLLM"
+  },
+  {
+    "name": "Chongxuan Li",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2025"
+    ],
+    "field": "Large_Language_Model/diffusionLLM"
+  },
+  {
+    "name": "Kevin Black",
+    "papers": 2,
+    "roles": {
+      "一作": 1,
+      "二作": 1
+    },
+    "years": [
+      "2024",
+      "2025"
+    ],
+    "field": "Robotics/VLA"
+  },
+  {
+    "name": "Ury Zhilinsky",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024",
+      "2025"
+    ],
+    "field": "Robotics/VLA"
+  },
+  {
+    "name": "Yanjiang Guo",
+    "papers": 2,
+    "roles": {
+      "二作": 2
+    },
+    "years": [
+      "2025"
+    ],
+    "field": "Robotics/VLA"
+  },
+  {
+    "name": "Jianyu Chen",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2025"
+    ],
+    "field": "Robotics/VLA"
+  },
+  {
+    "name": "Jiwen Lu",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2023",
+      "2025"
+    ],
+    "field": "Robotics/general VLN"
+  },
+  {
+    "name": "Richard S Sutton",
+    "papers": 2,
+    "roles": {
+      "二作": 1,
+      "通讯作者": 1
+    },
+    "years": [
+      "Unknown"
+    ],
+    "field": "Robotics/RL for robots"
+  },
+  {
+    "name": "Hang Zhao",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024",
+      "2025"
+    ],
+    "field": "Robotics/diffusion policy"
+  },
+  {
+    "name": "Oleg Sinavski",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Ce Zhou",
+    "papers": 2,
+    "roles": {
+      "一作": 2
+    },
+    "years": [
+      "2023"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Qian Li",
+    "papers": 2,
+    "roles": {
+      "二作": 2
+    },
+    "years": [
+      "2023"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Lichao Sun",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2023"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Boyi Li",
+    "papers": 2,
+    "roles": {
+      "一作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Marco Pavone",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Zhenting Qi",
+    "papers": 2,
+    "roles": {
+      "一作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/RL&COT"
+  },
+  {
+    "name": "Mingyuan Ma",
+    "papers": 2,
+    "roles": {
+      "二作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/RL&COT"
+  },
+  {
+    "name": "Mao Yang",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/RL&COT"
+  },
+  {
+    "name": "Xianzheng Ma",
+    "papers": 2,
+    "roles": {
+      "一作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Yash Bhalgat",
+    "papers": 2,
+    "roles": {
+      "二作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Victor Adrian Prisacariu",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Wenhai Wang",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 1,
+      "一作": 1
+    },
+    "years": [
+      "2023",
+      "2024"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Katrin Renz",
+    "papers": 2,
+    "roles": {
+      "一作": 1,
+      "二作": 1
+    },
+    "years": [
+      "2023",
+      "2024"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Junchi Yan",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/benchmark"
+  },
+  {
+    "name": "Yu Qiao",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Hengshuang Zhao",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model/Large Vision Model"
+  },
+  {
+    "name": "Xiaofeng Wang",
+    "papers": 2,
+    "roles": {
+      "一作": 1,
+      "二作": 1
+    },
+    "years": [
+      "2023",
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Duzhen Zhang",
+    "papers": 2,
+    "roles": {
+      "一作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Yahan Yu",
+    "papers": 2,
+    "roles": {
+      "二作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Dong Yu",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Jianhao Yuan",
+    "papers": 2,
+    "roles": {
+      "一作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Shuyang Sun",
+    "papers": 2,
+    "roles": {
+      "二作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Matthew Gadd",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Lin Guan",
+    "papers": 2,
+    "roles": {
+      "一作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Yifan Zhou",
+    "papers": 2,
+    "roles": {
+      "二作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Subbarao Kambhampati",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Maonan Wang",
+    "papers": 2,
+    "roles": {
+      "一作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Aoyu Pang",
+    "papers": 2,
+    "roles": {
+      "二作": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Bo Huang",
+    "papers": 2,
+    "roles": {
+      "通讯作者": 2
+    },
+    "years": [
+      "2024"
+    ],
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Jiageng Mao",
+    "papers": 2,
+    "roles": {
+      "一作": 2
+    },
+    "years": [
+      "2023"
+    ],
+    "field": "Large_Language_Model"
+  }
+]

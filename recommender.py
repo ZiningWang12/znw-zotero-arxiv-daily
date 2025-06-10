@@ -7,6 +7,91 @@ from loguru import logger
 from tqdm import tqdm
 from llm import get_llm
 import json
+import os
+from typing import Dict, List, Set, Tuple
+from collections import defaultdict
+import re
+
+class AuthorBasedRecommender:
+    def __init__(self, author_data_file: str = "author_data.json"):
+        """初始化基于作者的推荐器"""
+        self.key_authors = set()
+        self.load_author_data(author_data_file)
+        
+    def load_author_data(self, author_data_file: str):
+        """加载作者数据 - 无脑信任JSON中的所有作者"""
+        if not os.path.exists(author_data_file):
+            logger.warning(f"作者数据文件不存在: {author_data_file}")
+            return
+            
+        logger.info("加载作者数据...")
+        with open(author_data_file, 'r', encoding='utf-8') as f:
+            author_data = json.load(f)
+        
+        # 无脑加载所有作者
+        if isinstance(author_data, list):
+            # 新格式：数组
+            for author in author_data:
+                name = author.get('name', '')
+                if name:
+                    self.key_authors.add(name)
+        else:
+            # 旧格式：字典
+            for author_name in author_data.keys():
+                if author_name:
+                    self.key_authors.add(author_name)
+        
+        logger.info(f"加载了 {len(self.key_authors)} 位关键作者")
+
+def extract_authors_from_paper(paper: ArxivPaper) -> List[str]:
+    """从论文中提取作者列表"""
+    authors = []
+    if hasattr(paper, 'authors') and paper.authors:
+        for author in paper.authors:
+            # 处理作者名字格式
+            if hasattr(author, 'name'):
+                full_name = author.name
+            else:
+                full_name = str(author)
+            authors.append(full_name.strip())
+    return authors
+
+def author_name_match(paper_author: str, key_author: str) -> bool:
+    """简单的作者名字匹配"""
+    paper_author = paper_author.lower().strip()
+    key_author = key_author.lower().strip()
+    
+    # 完全匹配
+    if paper_author == key_author:
+        return True
+        
+    # 简单的部分匹配（姓氏匹配）
+    paper_parts = paper_author.split()
+    key_parts = key_author.split()
+    
+    if len(paper_parts) >= 2 and len(key_parts) >= 2:
+        # 姓氏匹配且名字首字母匹配
+        if paper_parts[-1] == key_parts[-1] and paper_parts[0][0] == key_parts[0][0]:
+            return True
+    
+    return False
+
+def is_paper_from_key_author(paper: ArxivPaper, author_recommender: AuthorBasedRecommender) -> Tuple[bool, List[str]]:
+    """检查论文是否来自关键作者"""
+    paper_authors = extract_authors_from_paper(paper)
+    matched_key_authors = []
+    
+    for paper_author in paper_authors:
+        for key_author in author_recommender.key_authors:
+            if author_name_match(paper_author, key_author):
+                matched_key_authors.append(key_author)
+                break  # 找到匹配就跳出
+    
+    if matched_key_authors:
+        logger.info(f"关键作者论文: {paper.title[:50]}... -> {matched_key_authors[0]}")
+        return True, matched_key_authors
+    
+    return False, []
 
 def llm_based_rerank_paper(candidate: list[ArxivPaper], corpus: list[dict], 
                            research_interests: list[str] = None,
@@ -15,12 +100,12 @@ def llm_based_rerank_paper(candidate: list[ArxivPaper], corpus: list[dict],
                            keyword_bonus: float = 2.0,
                            default_score: float = 5.0) -> list[ArxivPaper]:
     """
-    使用LLM（Gemini API）基于用户研究兴趣进行智能推荐
+    使用LLM基于用户研究兴趣进行智能推荐
     
     Args:
         candidate: 候选论文列表
         corpus: 用户历史论文库
-        research_interests: 用户研究兴趣领域列表（可以是字符串或列表）
+        research_interests: 用户研究兴趣领域列表
         corpus_batch_size: 用于参考的历史论文数量
         candidate_batch_size: 每批处理的候选论文数量
         keyword_bonus: 关键词匹配论文的额外加分
@@ -28,7 +113,7 @@ def llm_based_rerank_paper(candidate: list[ArxivPaper], corpus: list[dict],
     """
     logger.info("开始使用LLM进行智能推荐...")
     
-    # 处理研究兴趣参数，支持字符串和列表格式
+    # 处理研究兴趣参数
     if research_interests is None:
         research_interests = ["embodied AI"]
     elif isinstance(research_interests, str):
@@ -121,7 +206,7 @@ def llm_based_rerank_paper(candidate: list[ArxivPaper], corpus: list[dict],
                 
                 # 应用评分
                 for score_info in scores_data:
-                    paper_id = score_info["id"] - 1  # 转换为0-based索引
+                    paper_id = score_info["id"] - 1
                     if 0 <= paper_id < len(batch):
                         score = float(score_info["score"])
                         reason = score_info.get("reason", "")
@@ -133,20 +218,18 @@ def llm_based_rerank_paper(candidate: list[ArxivPaper], corpus: list[dict],
                 
             except (json.JSONDecodeError, KeyError) as e:
                 logger.warning(f"解析LLM响应失败: {e}，使用默认评分")
-                # 如果解析失败，使用默认评分
                 for paper in batch:
                     paper.score = default_score
                 scored_candidates.extend(batch)
                 
         except Exception as e:
             logger.error(f"LLM评分失败: {e}，使用默认评分")
-            # 如果LLM调用失败，使用默认评分
             for paper in batch:
                 paper.score = default_score
             scored_candidates.extend(batch)
     
-    # 对关键词匹配的论文给予额外加分
-    # scored_candidates = keyword_score_update(scored_candidates, keyword_bonus)
+    # 关键词加分
+    scored_candidates = keyword_score_update(scored_candidates, keyword_bonus)
     
     # 排序
     scored_candidates = sorted(scored_candidates, key=lambda x: x.score, reverse=True)
@@ -154,77 +237,101 @@ def llm_based_rerank_paper(candidate: list[ArxivPaper], corpus: list[dict],
     logger.info("LLM评分完成，论文已按分数排序")
     return scored_candidates
 
-def rerank_paper(candidate:list[ArxivPaper], corpus:list[dict], 
-                 model:str='avsolatorio/GIST-small-Embedding-v0', 
-                 use_llm:bool=True, llm_config:dict=None) -> list[ArxivPaper]:
+def rerank_with_author_priority(candidate: List[ArxivPaper], corpus: List[dict], 
+                               model: str = 'avsolatorio/GIST-small-Embedding-v0', 
+                               use_llm: bool = True, 
+                               llm_config: dict = None) -> List[ArxivPaper]:
     """
-    重新排名候选论文
+    两阶段推荐：先按相关性排序，然后将关键作者的论文提到前面
+    """
+    logger.info("开始推荐：相关性排序 + 关键作者优先")
     
-    Args:
-        candidate: 候选论文列表
-        corpus: 用户历史论文库
-        model: 嵌入模型名称（当use_llm=False时使用）
-        use_llm: 是否使用LLM进行评分
-        llm_config: LLM推荐算法配置字典
-    """
+    # 第一阶段：按相关性排序
     if use_llm:
         try:
             if llm_config:
-                return llm_based_rerank_paper(
-                    candidate, 
-                    corpus,
-                    research_interests=llm_config.get('research_interests'),
+                ranked_papers = llm_based_rerank_paper(
+                    candidate, corpus, research_interests=llm_config.get('research_interests'),
                     corpus_batch_size=llm_config.get('corpus_batch_size', 20),
                     candidate_batch_size=llm_config.get('candidate_batch_size', 8),
                     keyword_bonus=llm_config.get('keyword_bonus', 2.0),
                     default_score=llm_config.get('default_score', 5.0)
                 )
             else:
-                return llm_based_rerank_paper(candidate, corpus)
+                ranked_papers = llm_based_rerank_paper(candidate, corpus)
         except Exception as e:
-            logger.error(f"LLM推荐失败，回退到传统方法: {e}")
+            logger.error(f"LLM推荐失败，使用传统方法: {e}")
+            ranked_papers = traditional_rerank_paper(candidate, corpus, model)
+    else:
+        ranked_papers = traditional_rerank_paper(candidate, corpus, model)
+
+    # 过滤5分以下的论文
+    ranked_papers = [paper for paper in ranked_papers if paper.score > 5]
     
-    # 传统的基于嵌入相似度的方法
+    # 第二阶段：关键作者优先
+    author_recommender = AuthorBasedRecommender()
+    
+    if not author_recommender.key_authors:
+        logger.warning("没有关键作者数据")
+        return ranked_papers
+    
+    # 分离论文
+    key_author_papers = []
+    other_papers = []
+    
+    for paper in ranked_papers:
+        is_key_author, matched_authors = is_paper_from_key_author(paper, author_recommender)
+        if is_key_author:
+            paper.key_authors = matched_authors
+            key_author_papers.append(paper)
+        else:
+            other_papers.append(paper)
+    
+    # 合并结果：关键作者论文在前
+    final_result = key_author_papers + other_papers
+    
+    logger.info(f"推荐完成: {len(key_author_papers)} 篇关键作者论文在前，{len(other_papers)} 篇其他论文")
+    
+    return final_result
+
+def traditional_rerank_paper(candidate: List[ArxivPaper], corpus: List[dict], 
+                           model: str = 'avsolatorio/GIST-small-Embedding-v0') -> List[ArxivPaper]:
+    """传统的基于嵌入相似度的推荐方法"""
     logger.info("使用传统嵌入相似度方法进行推荐...")
     encoder = SentenceTransformer(model)
 
-    #sort corpus by date, from newest to oldest
-    corpus = sorted(corpus,key=lambda x: datetime.strptime(x['data']['dateAdded'], '%Y-%m-%dT%H:%M:%SZ'),reverse=True)
+    # 按日期排序corpus
+    corpus = sorted(corpus, key=lambda x: datetime.strptime(x['data']['dateAdded'], '%Y-%m-%dT%H:%M:%SZ'), reverse=True)
     time_decay_weight = 1 / (1 + np.log10(np.arange(len(corpus)) + 1))
     time_decay_weight = time_decay_weight / time_decay_weight.sum()
+    
     logger.info("Encoding corpus abstracts...")
-    logger.info("Corpus feature sample: {}".format(corpus[0]['data']['abstractNote']))
     corpus_feature = encoder.encode([paper['data']['abstractNote'] for paper in tqdm(corpus, desc="Corpus")])
     logger.info("Encoding candidate papers...")
     candidate_feature = encoder.encode([paper.summary for paper in tqdm(candidate, desc="Candidates")])
     
-    sim = encoder.similarity(candidate_feature,corpus_feature) # [n_candidate, n_corpus]
-    scores = (sim * time_decay_weight).sum(axis=1) * 10 # [n_candidate]
-    for s,c in zip(scores,candidate):
+    sim = encoder.similarity(candidate_feature, corpus_feature)
+    scores = (sim * time_decay_weight).sum(axis=1) * 10
+    for s, c in zip(scores, candidate):
         c.score = s.item()
 
-    # debug score
-    for i,c in enumerate(corpus):
-        logger.info(f"Corpus: {c['data']['title']}, Score: {sim[i].max()}, candidate: {candidate[sim[i].argmax()].title}")
-    for i, c in enumerate(candidate):
-        logger.info(f"Paper: {c.title}, Score: {c.score}, maxScore: {max(sim[i])}, zotero_paper: {corpus[sim[i].argmax()]['data']['title']}")
-
     candidate = keyword_score_update(candidate)
-    candidate = sorted(candidate,key=lambda x: x.score,reverse=True)
+    candidate = sorted(candidate, key=lambda x: x.score, reverse=True)
     return candidate
 
-def keyword_score_update(candidate:list[ArxivPaper], keyword_bonus:float=2.0) -> list[ArxivPaper]:
-    """
-    为关键词匹配的论文添加额外分数
-    
-    Args:
-        candidate: 候选论文列表  
-        keyword_bonus: 关键词匹配的额外加分
-    """
+def keyword_score_update(candidate: List[ArxivPaper], keyword_bonus: float = 0.5) -> List[ArxivPaper]:
+    """为关键词匹配的论文添加额外分数"""
     for c in candidate:
-        if c.search_keyword:
-            c.score = max(c.score + keyword_bonus, 10)
+        if hasattr(c, 'search_keyword') and c.search_keyword:
+            c.score = min(c.score + keyword_bonus, 10)
             logger.debug(f"关键词匹配加分: {c.title[:50]}... (+{keyword_bonus}分)")
     return candidate
+
+def rerank_paper(candidate: List[ArxivPaper], corpus: List[dict], 
+                 model: str = 'avsolatorio/GIST-small-Embedding-v0', 
+                 use_llm: bool = True, 
+                 llm_config: dict = None) -> List[ArxivPaper]:
+    """主推荐函数"""
+    return rerank_with_author_priority(candidate, corpus, model, use_llm, llm_config)
 
 

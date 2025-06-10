@@ -7,7 +7,6 @@ wheels/
 .vscode/
 *.egg-info
 .env
-private_config.yaml
 
 # Virtual environments
 .venv
@@ -16,3 +15,7 @@ test.ipynb
 logs
 models
 test-compose.yml
+
+# private files
+private_config.yaml
+data/

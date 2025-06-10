@@ -2,6 +2,8 @@ from llama_cpp import Llama
 from openai import OpenAI
 from loguru import logger
 from time import sleep
+import time
+from collections import deque
 
 GLOBAL_LLM = None
 
@@ -19,8 +21,41 @@ class LLM:
             )
         self.model = model
         self.lang = lang
+        
+        # 频率限制相关属性
+        self.request_times = deque()  # 存储请求时间戳
+        self.max_requests_per_minute = 9  # 设置为9，保险起见低于10
+        self.is_gemini = model and "gemini" in model.lower() if model else False
+
+    def _check_rate_limit(self):
+        """检查并执行频率限制"""
+        current_time = time.time()
+        
+        # 只对gemini模型或OpenAI API进行频率限制
+        if not (self.is_gemini or isinstance(self.llm, OpenAI)):
+            return
+            
+        # 移除超过1分钟的请求记录
+        while self.request_times and current_time - self.request_times[0] > 60:
+            self.request_times.popleft()
+        
+        # 如果请求数达到限制，等待
+        if len(self.request_times) >= self.max_requests_per_minute:
+            sleep_time = 60 - (current_time - self.request_times[0]) + 1  # 多等1秒保险
+            logger.info(f"达到频率限制，等待 {sleep_time:.1f} 秒...")
+            sleep(sleep_time)
+            # 清理过期的请求记录
+            current_time = time.time()
+            while self.request_times and current_time - self.request_times[0] > 60:
+                self.request_times.popleft()
+        
+        # 记录当前请求时间
+        self.request_times.append(current_time)
 
     def generate(self, messages: list[dict]) -> str:
+        # 执行频率限制检查
+        self._check_rate_limit()
+        
         if isinstance(self.llm, OpenAI):
             max_retries = 3
             for attempt in range(max_retries):

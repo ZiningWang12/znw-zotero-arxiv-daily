@@ -6,47 +6,17 @@ from dotenv import load_dotenv
 import yaml
 load_dotenv(override=True)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-from pyzotero import zotero
 from recommender import rerank_paper
 from construct_email import render_email, send_email
 from tqdm import trange,tqdm
 from loguru import logger
-from gitignore_parser import parse_gitignore
-from tempfile import mkstemp
+from zotero_utils import get_zotero_corpus, filter_corpus
 from paper import ArxivPaper
 from llm import set_global_llm
 import feedparser
 from datetime import datetime, timedelta, timezone
 
-def get_zotero_corpus(id:str,key:str) -> list[dict]:
-    zot = zotero.Zotero(id, 'user', key)
-    collections = zot.everything(zot.collections())
-    collections = {c['key']:c for c in collections}
-    logger.info(f"Retrieved {len(collections)} collections from Zotero.")
-    corpus = zot.everything(zot.items(itemType='conferencePaper || journalArticle || preprint'))
-    corpus = [c for c in corpus if c['data']['abstractNote'] != '']
-    def get_collection_path(col_key:str) -> str:
-        if p := collections[col_key]['data']['parentCollection']:
-            return get_collection_path(p) + '/' + collections[col_key]['data']['name']
-        else:
-            return collections[col_key]['data']['name']
-    for c in corpus:
-        paths = [get_collection_path(col) for col in c['data']['collections']]
-        c['paths'] = paths
-    return corpus
 
-def filter_corpus(corpus:list[dict], pattern:str) -> list[dict]:
-    _,filename = mkstemp()
-    with open(filename,'w') as file:
-        file.write(pattern)
-    matcher = parse_gitignore(filename,base_dir='./')
-    new_corpus = []
-    for c in corpus:
-        match_results = [matcher(p) for p in c['paths']]
-        if not any(match_results):
-            new_corpus.append(c)
-    os.remove(filename)
-    return new_corpus
 
 def filter_recent_papers(papers: list, days: int = 3) -> list:
     """过滤最近N天的论文
@@ -59,35 +29,107 @@ def filter_recent_papers(papers: list, days: int = 3) -> list:
         过滤后的论文列表
     """
     recent_days = datetime.now(timezone.utc) - timedelta(days=days)
-    return [p for p in papers if p.published >= recent_days]
+    logger.debug(f"Filtering papers since: {recent_days} (UTC)")
+    
+    filtered_papers = []
+    for p in papers:
+        if p.published >= recent_days:
+            filtered_papers.append(p)
+        else:
+            logger.debug(f"Filtered out paper published on {p.published}: {p.title[:50]}...")
+    
+    logger.debug(f"Date filter: {len(papers)} -> {len(filtered_papers)} papers")
+    return filtered_papers
 
 def get_arxiv_paper_by_category(query:str, debug:bool=False, max_results:int=50) -> list[ArxivPaper]:
     client = arxiv.Client(num_retries=10,delay_seconds=10)
-    feed = feedparser.parse(f"https://rss.arxiv.org/atom/{query}")
+    rss_url = f"https://rss.arxiv.org/atom/{query}"
+    logger.info(f"Fetching RSS feed from: {rss_url}")
+    
+    feed = feedparser.parse(rss_url)
+    
+    # 添加更详细的feed信息调试
+    logger.info(f"RSS feed status: {getattr(feed, 'status', 'N/A')}")
+    logger.info(f"RSS feed title: {getattr(feed.feed, 'title', 'N/A')}")
+    logger.info(f"RSS feed updated: {getattr(feed.feed, 'updated', 'N/A')}")
+    logger.info(f"RSS feed retrieved. Total entries: {len(feed.entries)}")
+    
     if 'Feed error for query' in feed.feed.title:
         raise Exception(f"Invalid ARXIV_QUERY: {query}.")
     
     # Search papers from Arxiv by category
     if not debug:
         papers = []
-        all_paper_ids = [i.id.removeprefix("oai:arXiv.org:") for i in feed.entries if i.arxiv_announce_type == 'new']
-        bar = tqdm(total=len(all_paper_ids),desc="Retrieving Arxiv papers")
-        for i in range(0,len(all_paper_ids),max_results):
-            search = arxiv.Search(id_list=all_paper_ids[i:i+max_results])
-            results = list(client.results(search))
-            filtered_results = filter_recent_papers(results)
-            batch = [ArxivPaper(p) for p in filtered_results]
-            bar.update(len(batch))
-            papers.extend(batch)
-        bar.close()
+        
+        # 如果RSS feed有数据，使用RSS方式
+        if len(feed.entries) > 0:
+            all_paper_ids = [i.id.removeprefix("oai:arXiv.org:") for i in feed.entries if hasattr(i, 'arxiv_announce_type') and i.arxiv_announce_type == 'new']
+            logger.info(f"Found {len(all_paper_ids)} new papers from RSS feed")
+            
+            # 调试：显示前几个论文ID和相关信息
+            for i, entry in enumerate(feed.entries[:5]):
+                announce_type = getattr(entry, 'arxiv_announce_type', 'N/A')
+                published = getattr(entry, 'published', 'N/A')
+                entry_id = entry.id.removeprefix('oai:arXiv.org:') if hasattr(entry, 'id') else 'N/A'
+                logger.info(f"Entry {i}: ID={entry_id}, announce_type={announce_type}, published={published}")
+            
+            if len(all_paper_ids) > 0:
+                bar = tqdm(total=len(all_paper_ids),desc="Retrieving Arxiv papers")
+                for i in range(0,len(all_paper_ids),max_results):
+                    search = arxiv.Search(id_list=all_paper_ids[i:i+max_results])
+                    results = list(client.results(search))
+                    logger.info(f"Batch {i//max_results + 1}: Retrieved {len(results)} papers from arxiv API")
+                    
+                    filtered_results = filter_recent_papers(results)
+                    logger.info(f"Batch {i//max_results + 1}: After date filtering: {len(filtered_results)} papers")
+                    
+                    batch = [ArxivPaper(p) for p in filtered_results]
+                    bar.update(len(batch))
+                    papers.extend(batch)
+                bar.close()
+            else:
+                logger.warning("RSS feed中没有找到'new'类型的论文，可能今天没有新论文发布")
+        
+        # 如果RSS feed为空或没有找到新论文，使用直接搜索作为回退
+        if len(papers) == 0:
+            logger.info("RSS feed为空或无新论文，使用直接搜索作为回退方案...")
+            
+            # 将查询字符串转换为搜索查询
+            categories = query.split('+')
+            search_queries = []
+            for cat in categories:
+                search_queries.append(f"cat:{cat}")
+            
+            combined_query = " OR ".join(search_queries)
+            logger.info(f"使用搜索查询: {combined_query}")
+            
+            search = arxiv.Search(
+                query=combined_query, 
+                max_results=max_results*2,  # 获取更多结果以便过滤
+                sort_by=arxiv.SortCriterion.SubmittedDate
+            )
+            
+            all_results = list(client.results(search))
+            logger.info(f"直接搜索获取到 {len(all_results)} 篇论文")
+            
+            # 过滤最近的论文
+            filtered_results = filter_recent_papers(all_results)
+            logger.info(f"日期过滤后剩余 {len(filtered_results)} 篇论文")
+            
+            # 限制数量
+            filtered_results = filtered_results[:max_results]
+            papers = [ArxivPaper(p) for p in filtered_results]
+            logger.info(f"最终返回 {len(papers)} 篇论文")
+            
     else:
-        logger.debug("Retrieve 5 arxiv papers regardless of the date.")
+        logger.debug("Debug模式：获取5篇cs.AI论文，不考虑日期限制")
         search = arxiv.Search(query='cat:cs.AI', sort_by=arxiv.SortCriterion.SubmittedDate)
         papers = []
         for i in client.results(search):
             papers.append(ArxivPaper(i))
             if len(papers) == 5:
                 break
+    
     return papers
 
 def get_arxiv_paper_by_keyword(query:str, debug:bool=False, max_results:int=10) -> list[ArxivPaper]:
@@ -259,17 +301,13 @@ if __name__ == '__main__':
             logger.info(f"Found {len(batch)} papers for keyword '{arxiv_keyword}'")
             keyword_papers.extend(batch)
         
-        # 去重：基于论文ID去重
-        existing_ids = {paper.arxiv_id for paper in papers}
-        unique_keyword_papers = [p for p in keyword_papers if p.arxiv_id not in existing_ids]
-        logger.info(f"Added {len(unique_keyword_papers)} unique papers from keyword search (removed {len(keyword_papers) - len(unique_keyword_papers)} duplicates)")
-        papers.extend(unique_keyword_papers)
+        papers.extend(keyword_papers)
 
     # 去重papers，基于arxiv_id, 并按发布时间排序
     papers = list(set(papers))
     papers.sort(key=lambda x: x.published, reverse=True)
     logger.info(f"Total papers retrieved: {len(papers)}")
-
+    
     # 设置LLM（在rerank之前）
     if args.use_llm_api:
         logger.info("Using OpenAI API as global LLM.")
@@ -286,6 +324,17 @@ if __name__ == '__main__':
         logger.info("Reranking papers...")
         # 使用LLM进行智能推荐，传递配置参数
         papers = rerank_paper(papers, corpus, use_llm=args.use_llm_api, llm_config=llm_recommender_config)
+        
+        # 调试：检查推荐后的论文分数分布
+        scores = [getattr(p, 'score', None) for p in papers]
+        logger.info(f"推荐后论文分数分布: 最高分={max(scores) if scores else 'N/A'}, 最低分={min(scores) if scores else 'N/A'}")
+        logger.info(f"分数为None的论文数: {sum(1 for s in scores if s is None)}")
+        logger.info(f"分数小于等于5的论文数: {sum(1 for s in scores if s is not None and s <= 5)}")
+        
+        # 打印前几篇论文的详细信息
+        for i, p in enumerate(papers[:5]):
+            logger.info(f"论文 {i+1}: {p.title[:50]}... | 分数: {getattr(p, 'score', 'None')}")
+        
         if args.max_paper_num != -1:
             papers = papers[:args.max_paper_num]
     
@@ -293,6 +342,6 @@ if __name__ == '__main__':
     logger.info("Sending email...")
     send_email(args.sender, args.receiver, args.sender_password, args.smtp_server, args.smtp_port, html)
     logger.success("Email sent successfully! If you don't receive the email, please check the configuration and the junk box.")
-
+    
     
     
