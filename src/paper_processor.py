@@ -1,5 +1,5 @@
 from loguru import logger
-from paper import ArxivPaper
+from src.paper import ArxivPaper
 
 
 def limit_papers_by_type(papers: list[ArxivPaper], max_paper_num: int) -> list[ArxivPaper]:

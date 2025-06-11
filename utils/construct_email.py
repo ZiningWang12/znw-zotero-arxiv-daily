@@ -1,4 +1,4 @@
-from paper import ArxivPaper
+from src.paper import ArxivPaper
 import math
 from tqdm import tqdm
 from email.header import Header

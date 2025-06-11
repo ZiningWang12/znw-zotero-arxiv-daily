@@ -1,7 +1,7 @@
 import arxiv
 from datetime import datetime, timedelta, timezone
 from loguru import logger
-from paper import ArxivPaper
+from src.paper import ArxivPaper
 
 
 def filter_recent_papers(papers: list, days: int = 2) -> list:

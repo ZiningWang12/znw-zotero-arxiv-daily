@@ -6,19 +6,19 @@ load_dotenv(override=True)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 from loguru import logger
-from zotero_utils import get_zotero_corpus, filter_corpus
-from llm import set_global_llm
-from recommender import rerank_paper
-from construct_email import render_email, send_email
+from utils.zotero_utils import get_zotero_corpus, filter_corpus
+from src.llm import set_global_llm
+from src.recommender import rerank_paper
+from utils.construct_email import render_email, send_email
 
 # 导入重构后的模块
-from config import create_argument_parser, merge_configs, validate_config
-from arxiv_client import (
+from config.config import create_argument_parser, merge_configs, validate_config
+from src.arxiv_client import (
     get_arxiv_paper_by_category, 
     get_arxiv_papers_by_keywords, 
     deduplicate_and_sort_papers
 )
-from paper_processor import limit_papers_by_type, print_paper_statistics
+from src.paper_processor import limit_papers_by_type, print_paper_statistics
 
 
 def setup_logging(debug: bool):

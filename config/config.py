@@ -62,7 +62,7 @@ def parse_research_interests(interests):
     return interests
 
 
-def load_config_from_yaml(config_file="private_config.yaml", public_config_file="config.yaml"):
+def load_config_from_yaml(config_file="config/private_config.yaml", public_config_file="config/config.yaml"):
     """从YAML文件加载配置"""
     if os.path.exists(config_file):
         with open(config_file, 'r', encoding='utf-8') as f:

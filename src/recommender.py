@@ -1,11 +1,11 @@
 import numpy as np
 import torch
 from sentence_transformers import SentenceTransformer
-from paper import ArxivPaper
+from src.paper import ArxivPaper
 from datetime import datetime
 from loguru import logger
 from tqdm import tqdm
-from llm import get_llm
+from src.llm import get_llm
 import json
 import os
 from typing import Dict, List, Set, Tuple
