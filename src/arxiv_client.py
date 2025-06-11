@@ -127,10 +127,14 @@ def get_arxiv_papers_by_keywords(arxiv_query_keyword: str, debug: bool = False) 
     keywords = [k.strip() for k in arxiv_query_keyword.split(',')]
     
     keyword_papers = []
-    for arxiv_keyword in keywords:
-        batch = get_arxiv_paper_by_keyword(arxiv_keyword, debug)
-        logger.info(f"Found {len(batch)} papers for keyword '{arxiv_keyword}'")
-        keyword_papers.extend(batch)
+    if not debug:
+        for arxiv_keyword in keywords:
+            batch = get_arxiv_paper_by_keyword(arxiv_keyword, debug)
+            logger.info(f"Found {len(batch)} papers for keyword '{arxiv_keyword}'")
+            keyword_papers.extend(batch)
+    else:
+        keyword_papers = get_arxiv_paper_by_keyword("robotics", debug, max_results=3)
+        logger.info(f"Found {len(keyword_papers)} papers for keyword 'robotics'")
     
     return keyword_papers
 
