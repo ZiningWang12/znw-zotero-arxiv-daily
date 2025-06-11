@@ -55,35 +55,57 @@
 2. Set Github Action environment variables.
 ![secrets](./assets/secrets.png)
 
-Below are all the secrets you need to set. They are invisible to anyone including you once they are set, for security.
+> [!IMPORTANT]
+> **Configuration Priority**: Settings in `config/config.yaml` or `config/private_config.yaml` files will **override** GitHub Action Secrets. If you set a parameter in YAML configuration files, the corresponding Secret will be ignored.
+
+### Sensitive Configuration (Recommended for GitHub Secrets)
+Below are the **sensitive secrets** you need to set. They are invisible to anyone including you once they are set, for security.
 
 | Key | Required | Type |Description | Example |
 | :--- | :---: | :---  | :---  | :--- |
 | ZOTERO_ID | ✅ | str  | User ID of your Zotero account. **User ID is not your username, but a sequence of numbers**Get your ID from [here](https://www.zotero.org/settings/security). You can find it at the position shown in this [screenshot](https://github.com/TideDra/zotero-arxiv-daily/blob/main/assets/userid.png). | 12345678  |
 | ZOTERO_KEY | ✅ | str  | An Zotero API key with read access. Get a key from [here](https://www.zotero.org/settings/security).  | AB5tZ877P2j7Sm2Mragq041H   |
-| ARXIV_QUERY | ✅ | str  | The categories of target arxiv papers. Use `+` to concatenate multiple categories. The example retrieves papers about AI, CV, NLP, ML. Find the abbr of your research area from [here](https://arxiv.org/category_taxonomy).  | cs.AI+cs.CV+cs.LG+cs.CL |
 | SMTP_SERVER | ✅ | str | The SMTP server that sends the email. I recommend to utilize a seldom-used email for this. Ask your email provider (Gmail, QQ, Outlook, ...) for its SMTP server| smtp.qq.com |
 | SMTP_PORT | ✅ | int | The port of SMTP server. | 465 |
 | SENDER | ✅ | str | The email account of the SMTP server that sends you email. | abc@qq.com |
 | SENDER_PASSWORD | ✅ | str | The password of the sender account. Note that it's not necessarily the password for logging in the e-mail client, but the authentication code for SMTP service. Ask your email provider for this.   | abcdefghijklmn |
 | RECEIVER | ✅ | str | The e-mail address that receives the paper list. | abc@outlook.com |
+| OPENAI_API_KEY | | str | API Key when using the API to access LLMs. You can get FREE API for using advanced open source LLMs in [SiliconFlow](https://cloud.siliconflow.cn/i/b3XhBRAm). | sk-xxx |
+
+### Non-Sensitive Configuration (Recommended for config.yaml)
+The following configuration items are **recommended to be set in `config/config.yaml` file**, which makes it easier to manage and modify. Of course, you can still choose to set them in GitHub Secrets.
+
+| Key | Required | Type |Description | Example |
+| :--- | :---: | :---  | :---  | :--- |
+| ARXIV_QUERY | ✅ | str  | The categories of target arxiv papers. Use `+` to concatenate multiple categories. The example retrieves papers about AI, CV, NLP, ML. Find the abbr of your research area from [here](https://arxiv.org/category_taxonomy).  | cs.AI+cs.CV+cs.LG+cs.CL |
 | MAX_PAPER_NUM | | int | The maximum number of the papers presented in the email. This value directly affects the execution time of this workflow, because it takes about 70s to generate TL;DR for one paper. `-1` means to present all the papers retrieved. | 50 |
 | SEND_EMPTY | | bool | Whether to send an empty email even if no new papers today. | False |
-| USE_LLM_API | | bool | Whether to use the LLM API in the cloud or to use local LLM. If set to `1`, the API is used. Else if set to `0`, the workflow will download and deploy an open-source LLM. Default to `0`. | 0 |
-| OPENAI_API_KEY | | str | API Key when using the API to access LLMs. You can get FREE API for using advanced open source LLMs in [SiliconFlow](https://cloud.siliconflow.cn/i/b3XhBRAm). | sk-xxx |
+| USE_LLM_API | | bool | Whether to use the LLM API in the cloud or to use local LLM. If set to `true`, the API is used. Else if set to `false`, the workflow will download and deploy an open-source LLM. Default to `false`. | false |
 | OPENAI_API_BASE | | str | API URL when using the API to access LLMs. If not filled in, the default is the OpenAI URL. | https://api.siliconflow.cn/v1 |
 | MODEL_NAME | | str | Model name when using the API to access LLMs. If not filled in, the default is gpt-4o. Qwen/Qwen2.5-7B-Instruct is recommended when using [SiliconFlow](https://cloud.siliconflow.cn/i/b3XhBRAm). | Qwen/Qwen2.5-7B-Instruct |
 | ARXIV_QUERY_KEYWORD | | str | Additional arxiv search by keywords (comma-separated). Papers found by keywords will be added to the category-based results. | robot manipulation, embodied AI |
 
-There are also some public variables (Repository Variables) you can set, which are easy to edit.
+> [!TIP]
+> **Configuration File Example**: Create a `config/config.yaml` file in the project root:
+> ```yaml
+> ARXIV_QUERY: "cs.AI+cs.CV+cs.LG+cs.CL"
+> MAX_PAPER_NUM: 50
+> USE_LLM_API: false
+> MODEL_NAME: "Qwen/Qwen2.5-7B-Instruct"
+> OPENAI_API_BASE: "https://api.siliconflow.cn/v1"
+> LANGUAGE: "Chinese"
+> ```
+
+### Other Public Configuration (Repository Variables or config.yaml)
+There are also some public variables (Repository Variables) you can set, which are easy to edit. **These configurations can also be set in `config/config.yaml`**.
 ![vars](./assets/repo_var.png)
 
 | Key | Required | Type | Description | Example |
 | :--- | :---  | :---  | :--- | :--- |
 | ZOTERO_IGNORE | | str | Gitignore-style patterns marking the Zotero collections that should be ignored. One rule one line. Learn more about [gitignore](https://git-scm.com/docs/gitignore). | AI Agent/<br>**/survey<br>!LLM/survey |
+| LANGUAGE | | str | The language of TLDR; Its value is directly embeded in the prompt passed to LLM | Chinese |
 | REPOSITORY | | str | The repository that provides the workflow. If set, the value can only be `TideDra/zotero-arxiv-daily`, in which case, the workflow always pulls the latest code from this upstream repo, so that you don't need to sync your forked repo upon each update, unless the workflow file is changed. | `TideDra/zotero-arxiv-daily` |
 | REF | | str | The specified ref of the workflow to run. Only valid when REPOSITORY is set to `TideDra/zotero-arxiv-daily`. Currently supported values include `main` for stable version, `dev` for development version which has new features and potential bugs. | `main` |
-| LANGUAGE | | str | The language of TLDR; Its value is directly embeded in the prompt passed to LLM | Chinese |
 
 That's all! Now you can test the workflow by manually triggering it:
 ![test](./assets/test.png)
@@ -98,12 +120,20 @@ By default, the main workflow runs on 22:00 UTC everyday. You can change this ti
 ### Local Running
 Supported by [uv](https://github.com/astral-sh/uv), this workflow can easily run on your local device if uv is installed:
 ```bash
-# set all the environment variables
+# Method 1: Using environment variables
 # export ZOTERO_ID=xxxx
+# export ZOTERO_KEY=xxxx
 # ...
+
+# Method 2: Using configuration file (Recommended)
+# Create config/private_config.yaml or config/config.yaml and set required parameters
+
 cd zotero-arxiv-daily
 uv run main.py
 ```
+
+> [!TIP]
+> For local running, it's recommended to create a `config/private_config.yaml` file to configure parameters, so you don't need to set many environment variables.
 > [!IMPORTANT]
 > The workflow will download and run an LLM (Qwen2.5-3B, the file size of which is about 3G). Make sure your network and hardware can handle it.
 
