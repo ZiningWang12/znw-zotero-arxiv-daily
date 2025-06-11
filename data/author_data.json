@@ -1,0 +1,74 @@
+[
+  {
+    "name": "Noah D. Goodman",
+    "roles": {
+      "通讯作者": 3
+    },
+    "field": "Large_Language_Model/RL&COT"
+  },
+  {
+    "name": "Hongyang Li",
+    "roles": {
+      "通讯作者": 3
+    },
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Long Chen",
+    "roles": {
+      "通讯作者": 2,
+      "二作": 2
+    },
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Yue Wang",
+    "roles": {
+      "二作": 1,
+      "通讯作者": 2
+    },
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Ury Zhilinsky",
+    "roles": {
+      "通讯作者": 2
+    },
+    "field": "Robotics/VLA"
+  },
+  {
+    "name": "Hang Zhao",
+    "roles": {
+      "通讯作者": 2
+    },
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Jiwen Lu",
+    "roles": {
+      "通讯作者": 2
+    },
+    "field": "Large_Language_Model"
+  },
+  {
+    "name": "Chongxuan Li",
+    "roles": {
+      "通讯作者": 2
+    },
+    "field": "Large_Language_Model/diffusionLLM"
+  },
+  {
+    "name": "Jianyu Chen",
+    "roles": {
+      "通讯作者": 2
+    },
+    "field": "Robotics/VLA"
+  },
+  {
+    "name": "Oleg Sinavski",
+    "roles": {
+      "通讯作者": 2
+    },
+    "field": "Large_Language_Model"
+  }
+]

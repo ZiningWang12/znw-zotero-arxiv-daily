@@ -1,6 +1,7 @@
 import os
 import sys
 from dotenv import load_dotenv
+import urllib.request
 
 load_dotenv(override=True)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -20,6 +21,10 @@ from src.arxiv_client import (
 )
 from src.paper_processor import limit_papers_by_type, print_paper_statistics
 
+# 设置全局User-Agent，模拟浏览器访问，防止被arXiv屏蔽
+opener = urllib.request.build_opener()
+opener.addheaders = [('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36')]
+urllib.request.install_opener(opener)
 
 def setup_logging(debug: bool):
     """设置日志配置"""
