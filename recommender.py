@@ -94,29 +94,30 @@ def is_paper_from_key_author(paper: ArxivPaper, author_recommender: AuthorBasedR
     return False, []
 
 def llm_based_rerank_paper(candidate: list[ArxivPaper], corpus: list[dict], 
-                           research_interests: list[str] = None,
-                           corpus_batch_size: int = 20, 
-                           candidate_batch_size: int = 8,
-                           keyword_bonus: float = 2.0,
-                           default_score: float = 5.0) -> list[ArxivPaper]:
+                           config: dict = None) -> list[ArxivPaper]:
     """
     使用LLM基于用户研究兴趣进行智能推荐
     
     Args:
         candidate: 候选论文列表
         corpus: 用户历史论文库
-        research_interests: 用户研究兴趣领域列表
-        corpus_batch_size: 用于参考的历史论文数量
-        candidate_batch_size: 每批处理的候选论文数量
-        keyword_bonus: 关键词匹配论文的额外加分
-        default_score: API调用失败时的默认分数
+        config: 推荐配置字典，包含所有必要参数
     """
     logger.info("开始使用LLM进行智能推荐...")
     
+    # 使用配置参数，提供默认值
+    if config is None:
+        config = {}
+    
+    research_interests = config.get('research_interests', ["embodied AI"])
+    corpus_batch_size = config.get('corpus_batch_size', 20)
+    candidate_batch_size = config.get('candidate_batch_size', 8)
+    keyword_bonus = config.get('keyword_bonus', 2.0)
+    default_score = config.get('default_score', 5.0)
+    abstract_max_length = config.get('abstract_max_length', 500)
+    
     # 处理研究兴趣参数
-    if research_interests is None:
-        research_interests = ["embodied AI"]
-    elif isinstance(research_interests, str):
+    if isinstance(research_interests, str):
         research_interests = [interest.strip() for interest in research_interests.split(',')]
     
     logger.info(f"配置参数: corpus_batch_size={corpus_batch_size}, candidate_batch_size={candidate_batch_size}")
@@ -131,7 +132,7 @@ def llm_based_rerank_paper(candidate: list[ArxivPaper], corpus: list[dict],
         corpus_info.append({
             "id": i + 1,
             "title": paper['data']['title'],
-            "abstract": paper['data']['abstractNote'][:500]  # 限制长度
+            "abstract": paper['data']['abstractNote'][:abstract_max_length]  # 使用配置的长度限制
         })
     
     # 分批处理候选论文
@@ -147,12 +148,12 @@ def llm_based_rerank_paper(candidate: list[ArxivPaper], corpus: list[dict],
             candidate_info.append({
                 "id": j + 1,
                 "title": paper.title,
-                "abstract": paper.summary[:500]  # 限制长度
+                "abstract": paper.summary[:abstract_max_length]  # 使用配置的长度限制
             })
         
         # 构建prompt
         prompt = f"""
-你是一位AI研究领域的专家。请根据用户的研究兴趣和历史阅读偏好，为候选论文打分。
+你是一位AI研究领域的专家。请根据用户的研究兴趣和历史阅读偏好，和候选论文的学术贡献，为候选论文打分。
 
 用户的主要研究兴趣包括：{', '.join(research_interests)}
 
@@ -167,7 +168,7 @@ def llm_based_rerank_paper(candidate: list[ArxivPaper], corpus: list[dict],
 - 7-8分：与用户研究兴趣相关，且论文学术贡献较高，值得关注
 - 5-6分：部分相关，可能有一定参考价值，或论文学术贡献一般
 - 3-4分：相关性较低，但在相关领域，或论文学术贡献较低
-- 1-2分：基本不相关，或论文学术贡献很低
+- 0-2分：基本不相关，或论文学术贡献很低
 
 请以JSON格式返回评分结果，格式如下：
 {{
@@ -229,7 +230,7 @@ def llm_based_rerank_paper(candidate: list[ArxivPaper], corpus: list[dict],
             scored_candidates.extend(batch)
     
     # 关键词加分
-    scored_candidates = keyword_score_update(scored_candidates, keyword_bonus)
+    scored_candidates = keyword_score_update(scored_candidates, keyword_bonus, config)
     
     # 排序
     scored_candidates = sorted(scored_candidates, key=lambda x: x.score, reverse=True)
@@ -251,22 +252,19 @@ def rerank_with_author_priority(candidate: List[ArxivPaper], corpus: List[dict],
         try:
             if llm_config:
                 ranked_papers = llm_based_rerank_paper(
-                    candidate, corpus, research_interests=llm_config.get('research_interests'),
-                    corpus_batch_size=llm_config.get('corpus_batch_size', 20),
-                    candidate_batch_size=llm_config.get('candidate_batch_size', 8),
-                    keyword_bonus=llm_config.get('keyword_bonus', 2.0),
-                    default_score=llm_config.get('default_score', 5.0)
+                    candidate, corpus, config=llm_config
                 )
             else:
-                ranked_papers = llm_based_rerank_paper(candidate, corpus)
+                ranked_papers = llm_based_rerank_paper(candidate, corpus, config={})
         except Exception as e:
             logger.error(f"LLM推荐失败，使用传统方法: {e}")
-            ranked_papers = traditional_rerank_paper(candidate, corpus, model)
+            ranked_papers = traditional_rerank_paper(candidate, corpus, model, llm_config)
     else:
-        ranked_papers = traditional_rerank_paper(candidate, corpus, model)
+        ranked_papers = traditional_rerank_paper(candidate, corpus, model, llm_config)
 
-    # 过滤5分以下的论文
-    ranked_papers = [paper for paper in ranked_papers if paper.score > 5]
+    # 过滤低分论文
+    score_threshold = llm_config.get('score_filter_threshold', 5.0) if llm_config else 5.0
+    ranked_papers = [paper for paper in ranked_papers if paper.score > score_threshold]
     
     # 第二阶段：关键作者优先
     author_recommender = AuthorBasedRecommender()
@@ -295,15 +293,30 @@ def rerank_with_author_priority(candidate: List[ArxivPaper], corpus: List[dict],
     return final_result
 
 def traditional_rerank_paper(candidate: List[ArxivPaper], corpus: List[dict], 
-                           model: str = 'avsolatorio/GIST-small-Embedding-v0') -> List[ArxivPaper]:
+                           model: str = None, config: dict = None) -> List[ArxivPaper]:
     """传统的基于嵌入相似度的推荐方法"""
     logger.info("使用传统嵌入相似度方法进行推荐...")
+    
+    # 使用配置参数
+    if config is None:
+        config = {}
+    
+    if model is None:
+        model = config.get('embedding_model', 'avsolatorio/GIST-small-Embedding-v0')
+    
+    use_time_decay = config.get('use_time_decay', True)
+    score_scale_factor = config.get('score_scale_factor', 10.0)
+    
     encoder = SentenceTransformer(model)
 
     # 按日期排序corpus
     corpus = sorted(corpus, key=lambda x: datetime.strptime(x['data']['dateAdded'], '%Y-%m-%dT%H:%M:%SZ'), reverse=True)
-    time_decay_weight = 1 / (1 + np.log10(np.arange(len(corpus)) + 1))
-    time_decay_weight = time_decay_weight / time_decay_weight.sum()
+    
+    if use_time_decay:
+        time_decay_weight = 1 / (1 + np.log10(np.arange(len(corpus)) + 1))
+        time_decay_weight = time_decay_weight / time_decay_weight.sum()
+    else:
+        time_decay_weight = np.ones(len(corpus)) / len(corpus)
     
     logger.info("Encoding corpus abstracts...")
     corpus_feature = encoder.encode([paper['data']['abstractNote'] for paper in tqdm(corpus, desc="Corpus")])
@@ -311,19 +324,25 @@ def traditional_rerank_paper(candidate: List[ArxivPaper], corpus: List[dict],
     candidate_feature = encoder.encode([paper.summary for paper in tqdm(candidate, desc="Candidates")])
     
     sim = encoder.similarity(candidate_feature, corpus_feature)
-    scores = (sim * time_decay_weight).sum(axis=1) * 10
+    scores = (sim * time_decay_weight).sum(axis=1) * score_scale_factor
     for s, c in zip(scores, candidate):
         c.score = s.item()
 
-    candidate = keyword_score_update(candidate)
+    keyword_bonus = config.get('keyword_bonus', 0.5)
+    candidate = keyword_score_update(candidate, keyword_bonus, config)
     candidate = sorted(candidate, key=lambda x: x.score, reverse=True)
     return candidate
 
-def keyword_score_update(candidate: List[ArxivPaper], keyword_bonus: float = 0.5) -> List[ArxivPaper]:
+def keyword_score_update(candidate: List[ArxivPaper], keyword_bonus: float = 0.5, config: dict = None) -> List[ArxivPaper]:
     """为关键词匹配的论文添加额外分数"""
+    if config is None:
+        config = {}
+    
+    max_score_limit = config.get('max_score_limit', 10.0)
+    
     for c in candidate:
         if hasattr(c, 'search_keyword') and c.search_keyword:
-            c.score = min(c.score + keyword_bonus, 10)
+            c.score = min(c.score + keyword_bonus, max_score_limit)
             logger.debug(f"关键词匹配加分: {c.title[:50]}... (+{keyword_bonus}分)")
     return candidate
 

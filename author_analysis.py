@@ -286,43 +286,86 @@ class AuthorAnalyzer:
         
         return report_text
     
-    def export_author_data(self, output_file: str, min_papers_for_export: int = 3):
-        """导出作者数据为JSON格式 - 极致简化版本，只保留top作者"""
-        logger.info(f"导出top作者数据到: {output_file} (最少{min_papers_for_export}篇论文)")
+    def calculate_author_score(self, name: str, info: dict) -> float:
+        """计算作者综合得分"""
+        # 统计作者角色
+        roles = {}
+        for paper in info['papers']:
+            role = paper['role']
+            roles[role] = roles.get(role, 0) + 1
         
-        # 极致简化的数据格式，只保留top作者
-        export_data = []
+        # 角色权重：通讯作者 > 一作 > 二作
+        role_weights = {
+            '通讯作者': 3.0,
+            '一作': 2.0,
+            '二作': 1.0
+        }
         
-        # 按论文数量排序，只导出高产作者
-        sorted_authors = sorted(
-            self.authors_info.items(),
-            key=lambda x: x[1]['total_papers'],
-            reverse=True
-        )
+        # 计算角色加权得分
+        role_score = 0
+        for role, count in roles.items():
+            weight = role_weights.get(role, 0.5)
+            role_score += count * weight
         
-        for name, info in sorted_authors:
+        # 年份新颖度得分（越新的年份权重越高）
+        current_year = datetime.now().year
+        year_score = 0
+        valid_years = [y for y in info['years'] if y != 'Unknown' and y.isdigit()]
+        
+        if valid_years:
+            for year_str in valid_years:
+                year = int(year_str)
+                # 年份越新，权重越高（最近5年内的权重递减）
+                if year >= current_year - 4:  # 2021-2025
+                    year_weight = 1.0 - (current_year - year) * 0.1
+                    year_score += year_weight
+                else:
+                    year_score += 0.3  # 较老的年份给较低权重
+        
+        # 综合得分 = 角色加权得分 * 0.6 + 论文总数 * 0.3 + 年份新颖度 * 0.1
+        total_score = role_score * 0.6 + info['total_papers'] * 0.3 + year_score * 0.1
+        
+        return total_score
+
+    def export_author_data(self, output_file: str, min_papers_for_export: int = 2, max_authors: int = 15):
+        """导出作者数据为JSON格式 - 智能排序，限制人数"""
+        logger.info(f"导出top作者数据到: {output_file} (最少{min_papers_for_export}篇论文，最多{max_authors}人)")
+        
+        # 计算所有符合条件作者的综合得分
+        author_scores = []
+        for name, info in self.authors_info.items():
             if info['total_papers'] >= min_papers_for_export:
-                # 统计作者角色
-                roles = {}
-                for paper in info['papers']:
-                    role = paper['role']
-                    roles[role] = roles.get(role, 0) + 1
-                
-                # 构建简化的作者信息
-                author_entry = {
-                    'name': name,
-                    'papers': info['total_papers'],
-                    'roles': roles,
-                    'years': sorted(list(info['years'])),
-                    'field': list(info['collections'])[0] if info['collections'] else 'Unknown'
-                }
-                
-                export_data.append(author_entry)
+                score = self.calculate_author_score(name, info)
+                author_scores.append((name, info, score))
+        
+        # 按综合得分排序
+        author_scores.sort(key=lambda x: x[2], reverse=True)
+        
+        # 限制输出人数
+        top_authors = author_scores[:max_authors]
+        
+        export_data = []
+        for name, info, score in top_authors:
+            # 统计作者角色
+            roles = {}
+            for paper in info['papers']:
+                role = paper['role']
+                roles[role] = roles.get(role, 0) + 1
+            
+            # 构建简化的作者信息
+            author_entry = {
+                'name': name,
+                'roles': roles,
+                'field': list(info['collections'])[0] if info['collections'] else 'Unknown'
+            }
+            
+            export_data.append(author_entry)
         
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(export_data, f, ensure_ascii=False, indent=2)
         
-        logger.info(f"已导出 {len(export_data)} 位top作者的简化信息（原始作者总数: {len(self.authors_info)}）")
+        logger.info(f"已导出 {len(export_data)} 位top作者的智能排序信息（原始作者总数: {len(self.authors_info)}）")
+        logger.info("排序规则: 通讯作者>一作>二作，越新的文章权重越高")
     
     def get_author_keywords(self, min_papers: int = 2) -> Dict[str, List[str]]:
         """从作者的论文标题中提取关键词"""
@@ -363,6 +406,8 @@ def main():
                        default=2)
     parser.add_argument('--min_export_papers', type=int, help='导出作者最少论文数',
                        default=2)
+    parser.add_argument('--max_authors', type=int, help='导出作者最大数量',
+                       default=15)
     parser.add_argument('--debug', action='store_true', help='调试模式')
     
     args = parser.parse_args()
@@ -418,8 +463,8 @@ def main():
     # 生成报告
     report = analyzer.generate_report(args.output_report)
     
-    # 导出数据
-    analyzer.export_author_data(args.output_data, min_papers_for_export=args.min_export_papers)
+    # 导出数据（可配置人数限制）
+    analyzer.export_author_data(args.output_data, min_papers_for_export=args.min_export_papers, max_authors=args.max_authors)
     
     # 生成关键词分析
     keywords = analyzer.get_author_keywords(args.min_papers)
@@ -432,16 +477,22 @@ def main():
     logger.success(f"分析完成！")
     logger.info(f"总作者数: {stats['total_authors']}")
     logger.info(f"高产作者数: {len(stats['prolific_authors'])}")
-    logger.info(f"导出top作者数: {len([name for name, info in analyzer.authors_info.items() if info['total_papers'] >= args.min_export_papers])}")
+    eligible_authors_count = len([name for name, info in analyzer.authors_info.items() if info['total_papers'] >= args.min_export_papers])
+    actual_export_count = min(eligible_authors_count, args.max_authors)
+    logger.info(f"符合条件的作者数: {eligible_authors_count}")
+    logger.info(f"实际导出作者数: {actual_export_count} (最大限制: {args.max_authors})")
     logger.info(f"报告已保存: {args.output_report}")
     logger.info(f"数据已导出: {args.output_data}")
     
     # 显示JSON格式示例
     if analyzer.authors_info:
-        logger.info("JSON格式示例:")
-        logger.info("每位作者包含: name(姓名), papers(论文数), roles(角色统计), years(年份), field(主要领域)")
-        logger.info("角色包括: 一作、二作、通讯作者")
-        logger.info(f"只导出论文数>={args.min_export_papers}的作者，便于推荐系统直接使用")
+        logger.info("配置参数:")
+        logger.info(f"  最少论文数: {args.min_export_papers}")
+        logger.info(f"  最大作者数: {args.max_authors}")
+        logger.info("JSON格式说明:")
+        logger.info("  每位作者包含: name(姓名), papers(论文数), roles(角色统计), years(年份), field(主要领域)")
+        logger.info("  角色包括: 一作、二作、通讯作者")
+        logger.info("  排序规则: 通讯作者>一作>二作，越新的文章权重越高")
 
 if __name__ == '__main__':
     main() 

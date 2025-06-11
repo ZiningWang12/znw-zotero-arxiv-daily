@@ -1,9 +1,5 @@
-# Zotero ID, SMTP，LLM API相关配置去除，在github secrets中设置
-
 # Zotero配置
 ZOTERO_IGNORE: |
-  # 使用gitignore风格的语法指定要忽略的Zotero文件夹
-  # 例如：
   Blog/Copley
   Blog/Copley/**
   AutonomousDriving
@@ -27,7 +23,7 @@ ARXIV_QUERY_KEYWORD: |
 
 
 # 可选配置
-MAX_PAPER_NUM: 10  # 邮件中展示的最大论文数量，-1表示展示所有论文
+MAX_PAPER_NUM: 15  # 邮件中展示的最大论文数量，-1表示展示所有论文
 SEND_EMPTY: false  # 是否在没有新论文时发送空邮件
 
 # LLM推荐算法配置
@@ -37,11 +33,11 @@ LLM_RECOMMENDER:
     - "embodied AI"
     - "robotics"
     - "world model" 
-    - "multimodal learning"
+    - "embodied dataset"
+    - "robot dataset"
     - "vision-language models"
     - "robot learning"
     - "reinforcement learning"
-    - "natural language processing"
     - "robot manipulation"
     - "robot navigation"
     - "imitation learning"
@@ -53,5 +49,21 @@ LLM_RECOMMENDER:
   CANDIDATE_BATCH_SIZE: 20  # 每批处理的候选论文数量
   
   # 评分配置
-  KEYWORD_BONUS: 1.0  # 关键词匹配论文的额外加分
+  KEYWORD_BONUS: 0.5  # 关键词匹配论文的额外加分
   DEFAULT_SCORE: 5.0  # API调用失败时的默认分数
+  
+  # 文本处理配置
+  ABSTRACT_MAX_LENGTH: 500  # 摘要最大长度限制
+  SCORE_FILTER_THRESHOLD: 5.0  # 论文评分过滤阈值
+  MAX_SCORE_LIMIT: 10.0  # 最大评分限制
+  SCORE_SCALE_FACTOR: 10.0  # 传统方法的评分缩放因子
+  
+  # API调用和限流配置
+  MAX_REQUESTS_PER_MINUTE: 9  # 每分钟最大请求数（针对Gemini）
+  API_RETRY_ATTEMPTS: 3  # API调用失败时的重试次数
+  API_RETRY_DELAY: 3.0  # 重试间隔时间（秒）
+  RATE_LIMIT_BUFFER: 1.0  # 限流缓冲时间（秒）
+  
+  # 传统推荐配置
+  EMBEDDING_MODEL: "avsolatorio/GIST-small-Embedding-v0"  # 嵌入模型
+  USE_TIME_DECAY: true  # 是否使用时间衰减权重

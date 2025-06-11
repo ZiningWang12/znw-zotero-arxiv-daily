@@ -19,3 +19,4 @@ test-compose.yml
 # private files
 private_config.yaml
 data/
+tests/

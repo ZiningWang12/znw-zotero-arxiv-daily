@@ -4,6 +4,7 @@ from tempfile import TemporaryDirectory
 import arxiv
 import tarfile
 import re
+import json
 from llm import get_llm
 import requests
 from requests.adapters import HTTPAdapter, Retry
@@ -146,215 +147,207 @@ class ArxivPaper:
     
     @cached_property
     def tldr(self) -> str:
-        introduction = ""
-        conclusion = ""
-        if self.tex is not None:
-            content = self.tex.get("all")
-            if content is None:
-                content = "\n".join(self.tex.values())
-            #remove cite
-            content = re.sub(r'~?\\cite.?\{.*?\}', '', content)
-            #remove figure
-            content = re.sub(r'\\begin\{figure\}.*?\\end\{figure\}', '', content, flags=re.DOTALL)
-            #remove table
-            content = re.sub(r'\\begin\{table\}.*?\\end\{table\}', '', content, flags=re.DOTALL)
-            #find introduction and conclusion
-            # end word can be \section or \end{document} or \bibliography or \appendix
-            match = re.search(r'\\section\{Introduction\}.*?(\\section|\\end\{document\}|\\bibliography|\\appendix|$)', content, flags=re.DOTALL)
-            if match:
-                introduction = match.group(0)
-            match = re.search(r'\\section\{Conclusion\}.*?(\\section|\\end\{document\}|\\bibliography|\\appendix|$)', content, flags=re.DOTALL)
-            if match:
-                conclusion = match.group(0)
-        llm = get_llm()
-        prompt = """Given the title, abstract, introduction and the conclusion (if any) of a paper in latex format, generate a one-sentence TLDR summary in __LANG__:
-        
-        \\title{__TITLE__}
-        \\begin{abstract}__ABSTRACT__\\end{abstract}
-        __INTRODUCTION__
-        __CONCLUSION__
-        """
-        prompt = prompt.replace('__LANG__', llm.lang)
-        prompt = prompt.replace('__TITLE__', self.title)
-        prompt = prompt.replace('__ABSTRACT__', self.summary)
-        prompt = prompt.replace('__INTRODUCTION__', introduction)
-        prompt = prompt.replace('__CONCLUSION__', conclusion)
-
-        # use gpt-4o tokenizer for estimation
-        enc = tiktoken.encoding_for_model("gpt-4o")
-        prompt_tokens = enc.encode(prompt)
-        prompt_tokens = prompt_tokens[:4000]  # truncate to 4000 tokens
-        prompt = enc.decode(prompt_tokens)
-        
-        tldr = llm.generate(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are an assistant who perfectly summarizes scientific paper, and gives the core idea of the paper to the user.",
-                },
-                {"role": "user", "content": prompt},
-            ]
-        )
-        return tldr
+        """获取论文的TLDR摘要，通过合并的LLM调用获取"""
+        return self.llm_extracted_info.get("tldr", "Summary unavailable")
 
     @cached_property
     def affiliations(self) -> Optional[list[str]]:
-        if self.tex is not None:
-            content = self.tex.get("all")
-            if content is None:
-                content = "\n".join(self.tex.values())
-                
-            # 扩展搜索模式，涵盖更多常见的LaTeX格式
-            possible_regions = [
-                # 标准格式：author到maketitle
-                r'\\author.*?\\maketitle',
-                # 文档开始到摘要（扩大搜索范围）
-                r'\\begin{document}.*?\\begin{abstract}', 
-                # 标题页区域：从title到section或abstract
-                r'\\title.*?(?=\\section|\\begin{abstract})',
-                # author到date之间
-                r'\\author.*?\\date',
-                # author到title之间（有些论文author在title后面）
-                r'\\title.*?\\author.*?(?=\\section|\\begin{abstract}|\\maketitle)',
-                # author到section之间
-                r'\\author.*?(?=\\section)',
-                # 脚注区域（特别针对MagicGripper这种格式）
-                r'\\footnote.*?(?=\\section|\\begin{abstract}|\\maketitle|$)',
-                # 查找脚注命令后的内容
-                r'\\footnotetext.*?(?=\\section|\\begin{abstract}|\\maketitle|$)',
-                # 查找包含"are with"/"is with"模式的区域（作者机构常用表达）
-                r'.*?(?:are with|is with|affiliated with).*?(?=\\section|\\begin{abstract}|\\maketitle|$)',
-                # 查找标题页作者信息块（新增：处理A4Bench这种格式）
-                r'(?:^|\\title).*?(?:university|institute|college|lab|department|shanghai|beijing|tsinghua|stanford|mit|google|microsoft|openai|deepmind).*?(?=\\section|\\begin{abstract})',
-                # 整个文档前3000字符（进一步扩大搜索范围）
-                r'^.{0,3000}',
-                # 查找包含email地址的区域（通常在作者信息附近）
-                r'.*?@.*?\..*?(?=\\section|\\begin{abstract})',
-                # 查找包含university/institute关键词的区域
-                r'.*?(?:university|institute|college|lab|department).*?(?=\\section|\\begin{abstract})',
-                # 查找页面底部的脚注区域
-                r'.*?(?:footnote|thanks).*?(?:university|institute|college|department).*?(?=\\section|\\begin{abstract}|$)',
-            ]
-            
-            information_region = None
-            
-            # 按优先级尝试匹配
-            for pattern in possible_regions:
-                try:
-                    match = re.search(pattern, content, flags=re.DOTALL | re.IGNORECASE)
-                    if match:
-                        candidate_region = match.group(0)
-                        # 检查是否包含可能的机构信息关键词
-                        affiliation_keywords = [
-                            'university', 'institute', 'college', 'lab', 'department', 
-                            'school', 'center', 'centre', 'academy', '@', 'tech', 'polytechnic',
-                            # 增加脚注中常见的表达方式
-                            'are with', 'is with', 'affiliated with', 'belong to',
-                            # 增加更多机构类型
-                            'research', 'laboratory', 'faculty', 'division',
-                            # 增加常见地理位置和机构名称
-                            'shanghai', 'beijing', 'china', 'usa', 'uk', 'japan', 'singapore',
-                            'tsinghua', 'peking', 'fudan', 'sjtu', 'stanford', 'mit', 'harvard', 'berkeley',
-                            'google', 'microsoft', 'openai', 'deepmind', 'meta', 'nvidia', 'apple',
-                            'carnegie', 'mellon', 'caltech', 'princeton', 'yale', 'columbia',
-                            # 欧洲常见机构关键词  
-                            'cambridge', 'oxford', 'london', 'edinburgh', 'eth', 'epfl'
-                        ]
-                        
-                        if any(keyword in candidate_region.lower() for keyword in affiliation_keywords):
-                            information_region = candidate_region
-                            logger.debug(f"找到作者信息区域 for {self.arxiv_id}, 使用模式: {pattern[:30]}...")
-                            break
-                except Exception as e:
-                    logger.debug(f"模式匹配失败 {pattern}: {e}")
-                    continue
-            
-            if not information_region:
-                logger.debug(f"Failed to extract affiliations of {self.arxiv_id}: No author information found.")
-                return None
-                
-            # 清理和预处理文本
-            # 更温和的清理方式，保留更多有用信息
-            information_region = re.sub(r'\\(?:section|subsection|subsubsection)\{.*?\}', ' ', information_region)  # 移除章节标题
-            information_region = re.sub(r'\\(?:cite|ref|label)\{.*?\}', ' ', information_region)  # 移除引用标签
-            information_region = re.sub(r'\\(?:textbf|textit|emph)\{(.*?)\}', r'\1', information_region)  # 保留格式化文本内容
-            information_region = re.sub(r'\\[a-zA-Z]+\*?(\[.*?\])?\{([^{}]*)\}', r'\2', information_region)  # 移除LaTeX命令但保留内容
-            information_region = re.sub(r'\{|\}', ' ', information_region)  # 移除大括号
-            information_region = re.sub(r'\\\\|\n+', ' ', information_region)  # 移除换行符和\\
-            information_region = re.sub(r'\s+', ' ', information_region).strip()  # 标准化空格
-            
-            prompt = f"""Given the author information from a research paper, extract the affiliations of the authors.
+        """获取论文的机构信息，通过合并的LLM调用获取"""
+        affiliations = self.llm_extracted_info.get("affiliations", [])
+        return affiliations if affiliations else None
 
-The author information may be in different formats:
-1. Standard LaTeX author blocks
-2. Footnotes with author abbreviations (e.g., "W. F and D. Zhang are with...")
-3. Mixed formats with affiliations in footnotes
-4. Direct listing format (e.g., "Author Name\\nemail@domain.com\\nUniversity Name\\nCity, Country")
-
-Return a Python list of unique affiliations, like ['Stanford University', 'MIT', 'Google Research'].
-
-Rules:
-1. Extract only the main institution name (e.g., 'Stanford University' not 'Department of CS, Stanford University')
-2. Remove duplicates
-3. If no affiliations found, return []
-4. Focus on universities, companies, research institutions
-5. Ignore personal email domains and email addresses
-6. Handle abbreviations in footnotes (e.g., "W. F and D. Zhang are with Imperial College London")
-7. Look for patterns like "are with", "is with", "affiliated with"
-8. In direct listing format, institutions usually appear after email addresses
-9. Common institution types: University, Institute, College, Lab, AI Lab, Research Center, Company
-
-Author information:
-{information_region[:4000]}"""  # 限制长度避免token过多
-            
+    @cached_property
+    def llm_extracted_info(self) -> dict:
+        """
+        使用一次LLM调用同时提取TLDR和机构信息，提高效率
+        Returns: {"tldr": str, "affiliations": list[str]}
+        """
+        if self.tex is None:
+            logger.debug(f"无tex内容 for {self.arxiv_id}, 仅使用摘要生成TLDR")
+            # 如果没有tex文件，只生成基于摘要的TLDR
             llm = get_llm()
-            try:
-                affiliations = llm.generate(
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are an expert at extracting institutional affiliations from academic paper author information. You can handle various formats including standard author blocks, footnotes with abbreviations, and mixed formats. Focus on identifying university names, research institutes, and companies. Return only a Python list format, like ['University A', 'Company B']. Be concise and accurate."
-                        },
-                        {"role": "user", "content": prompt},
-                    ]
-                )
+            prompt = f"""Based on this paper's title and abstract, provide:
+1. A one-sentence TLDR summary in {llm.lang}
+2. Extract affiliations (return empty list if not available)
 
-                # 更robust的解析方式
-                affiliations_text = affiliations.strip()
+Title: {self.title}
+Abstract: {self.summary}
+
+Please respond in JSON format:
+{{
+    "tldr": "one sentence summary",
+    "affiliations": []
+}}"""
+            
+            try:
+                response = llm.generate([
+                    {"role": "system", "content": "You are an expert at summarizing academic papers and extracting affiliations. Always respond in valid JSON format."},
+                    {"role": "user", "content": prompt}
+                ])
                 
-                # 尝试提取列表格式
-                list_match = re.search(r'\[.*?\]', affiliations_text, flags=re.DOTALL)
-                if list_match:
-                    try:
-                        affiliations_list = eval(list_match.group(0))
-                        if isinstance(affiliations_list, list):
-                            # 清理和去重
-                            cleaned_affiliations = []
-                            for aff in affiliations_list:
-                                if isinstance(aff, str) and len(aff.strip()) > 2:
-                                    cleaned_aff = aff.strip()
-                                    # 移除明显的个人邮箱域名
-                                    if not cleaned_aff.endswith(('.com', '.org', '.net', '.edu')) or \
-                                       any(inst in cleaned_aff.lower() for inst in ['university', 'institute', 'college']):
-                                        cleaned_affiliations.append(cleaned_aff)
-                            
-                            # 去重并返回
-                            unique_affiliations = list(dict.fromkeys(cleaned_affiliations))  # 保持顺序的去重
-                            if unique_affiliations:
-                                logger.debug(f"成功提取机构信息 for {self.arxiv_id}: {unique_affiliations}")
-                                return unique_affiliations
-                    except Exception as e:
-                        logger.debug(f"解析机构列表失败 for {self.arxiv_id}: {e}")
-                
-                logger.debug(f"未能解析机构信息 for {self.arxiv_id}, LLM输出: {affiliations_text[:100]}...")
-                return None
-                
+                # 解析JSON响应
+                json_match = re.search(r'\{.*\}', response, flags=re.DOTALL)
+                if json_match:
+                    result = json.loads(json_match.group(0))
+                    return {
+                        "tldr": result.get("tldr", "Summary unavailable"),
+                        "affiliations": result.get("affiliations", [])
+                    }
             except Exception as e:
-                logger.debug(f"LLM调用失败 for {self.arxiv_id}: {e}")
-                return None
-        else:
-            logger.debug(f"无tex内容 for {self.arxiv_id}")
-            return None
+                logger.warning(f"LLM合并调用失败 for {self.arxiv_id}: {e}")
+            
+            return {"tldr": "Summary unavailable", "affiliations": []}
+        
+        # 有tex文件的情况，提取详细信息
+        content = self.tex.get("all")
+        if content is None:
+            content = "\n".join(self.tex.values())
+        
+        # 提取introduction和conclusion（用于TLDR）
+        introduction = ""
+        conclusion = ""
+        # 清理content
+        clean_content = re.sub(r'~?\\cite.?\{.*?\}', '', content)
+        clean_content = re.sub(r'\\begin\{figure\}.*?\\end\{figure\}', '', clean_content, flags=re.DOTALL)
+        clean_content = re.sub(r'\\begin\{table\}.*?\\end\{table\}', '', clean_content, flags=re.DOTALL)
+        
+        # 查找introduction和conclusion
+        intro_match = re.search(r'\\section\{Introduction\}.*?(\\section|\\end\{document\}|\\bibliography|\\appendix|$)', clean_content, flags=re.DOTALL)
+        if intro_match:
+            introduction = intro_match.group(0)
+        
+        concl_match = re.search(r'\\section\{Conclusion\}.*?(\\section|\\end\{document\}|\\bibliography|\\appendix|$)', clean_content, flags=re.DOTALL)
+        if concl_match:
+            conclusion = concl_match.group(0)
+        
+        # 提取作者信息区域（用于机构信息）
+        author_info = self._extract_author_region(content)
+        
+        # 构建合并的prompt
+        llm = get_llm()
+        prompt = f"""Analyze this academic paper and provide both a summary and author affiliations.
+
+Paper Information:
+Title: {self.title}
+Abstract: {self.summary}
+Introduction: {introduction[:2000]}
+Conclusion: {conclusion[:1000]}
+
+Author Information Section:
+{author_info[:2000] if author_info else "Not available"}
+
+Please provide:
+1. A one-sentence TLDR summary in {llm.lang}
+2. Extract the main institutional affiliations (universities, companies, research institutes)
+
+Respond in JSON format:
+{{
+    "tldr": "one sentence summary of the paper's main contribution",
+    "affiliations": ["Institution 1", "Institution 2", ...]
+}}
+
+For affiliations:
+- Extract only main institution names (e.g., "Stanford University", not "Department of CS, Stanford University")
+- Look for universities, companies, research institutes
+- Handle footnote formats like "X and Y are with Institution Name"
+- Return empty list if no clear affiliations found
+- Remove duplicates"""
+
+        # 使用token限制
+        import tiktoken
+        try:
+            enc = tiktoken.encoding_for_model("gpt-4o")
+            prompt_tokens = enc.encode(prompt)
+            if len(prompt_tokens) > 4000:
+                prompt_tokens = prompt_tokens[:4000]
+                prompt = enc.decode(prompt_tokens)
+        except:
+            # 如果tiktoken失败，简单截断
+            prompt = prompt[:8000]
+        
+        try:
+            response = llm.generate([
+                {"role": "system", "content": "You are an expert at analyzing academic papers. You can summarize papers concisely and extract institutional affiliations accurately. Always respond in valid JSON format."},
+                {"role": "user", "content": prompt}
+            ])
+            
+            # 解析JSON响应
+            json_match = re.search(r'\{.*\}', response, flags=re.DOTALL)
+            if json_match:
+                result = json.loads(json_match.group(0))
+                affiliations = result.get("affiliations", [])
+                
+                # 清理和验证机构信息
+                cleaned_affiliations = []
+                if isinstance(affiliations, list):
+                    for aff in affiliations:
+                        if isinstance(aff, str) and len(aff.strip()) > 2:
+                            cleaned_aff = aff.strip()
+                            # 过滤明显的邮箱域名
+                            if not cleaned_aff.endswith(('.com', '.org', '.net', '.edu')) or \
+                               any(inst in cleaned_aff.lower() for inst in ['university', 'institute', 'college']):
+                                cleaned_affiliations.append(cleaned_aff)
+                
+                # 去重
+                unique_affiliations = list(dict.fromkeys(cleaned_affiliations))
+                
+                logger.debug(f"LLM合并提取成功 for {self.arxiv_id}: TLDR={result.get('tldr', '')[:50]}..., 机构={unique_affiliations}")
+                
+                return {
+                    "tldr": result.get("tldr", "Summary unavailable"),
+                    "affiliations": unique_affiliations
+                }
+                
+        except Exception as e:
+            logger.warning(f"LLM合并调用失败 for {self.arxiv_id}: {e}")
+        
+        return {"tldr": "Summary unavailable", "affiliations": []}
+    
+    def _extract_author_region(self, content: str) -> str:
+        """提取作者信息区域的辅助方法"""
+        possible_regions = [
+            r'\\author.*?\\maketitle',
+            r'\\begin{document}.*?\\begin{abstract}', 
+            r'\\title.*?(?=\\section|\\begin{abstract})',
+            r'\\author.*?\\date',
+            r'\\title.*?\\author.*?(?=\\section|\\begin{abstract}|\\maketitle)',
+            r'\\author.*?(?=\\section)',
+            r'\\footnote.*?(?=\\section|\\begin{abstract}|\\maketitle|$)',
+            r'\\footnotetext.*?(?=\\section|\\begin{abstract}|\\maketitle|$)',
+            r'.*?(?:are with|is with|affiliated with).*?(?=\\section|\\begin{abstract}|\\maketitle|$)',
+            r'(?:^|\\title).*?(?:university|institute|college|lab|department|shanghai|beijing|tsinghua|stanford|mit|google|microsoft|openai|deepmind).*?(?=\\section|\\begin{abstract})',
+            r'^.{0,3000}',
+            r'.*?@.*?\..*?(?=\\section|\\begin{abstract})',
+            r'.*?(?:university|institute|college|lab|department).*?(?=\\section|\\begin{abstract})',
+            r'.*?(?:footnote|thanks).*?(?:university|institute|college|department).*?(?=\\section|\\begin{abstract}|$)',
+        ]
+        
+        affiliation_keywords = [
+            'university', 'institute', 'college', 'lab', 'department', 'school', 'center', 'centre', 
+            'academy', '@', 'tech', 'polytechnic', 'are with', 'is with', 'affiliated with', 
+            'research', 'laboratory', 'faculty', 'division', 'shanghai', 'beijing', 'china', 
+            'tsinghua', 'stanford', 'mit', 'google', 'microsoft', 'openai', 'deepmind'
+        ]
+        
+        for pattern in possible_regions:
+            try:
+                match = re.search(pattern, content, flags=re.DOTALL | re.IGNORECASE)
+                if match:
+                    candidate_region = match.group(0)
+                    if any(keyword in candidate_region.lower() for keyword in affiliation_keywords):
+                        # 清理文本
+                        clean_region = re.sub(r'\\(?:section|subsection|subsubsection)\{.*?\}', ' ', candidate_region)
+                        clean_region = re.sub(r'\\(?:cite|ref|label)\{.*?\}', ' ', clean_region)
+                        clean_region = re.sub(r'\\(?:textbf|textit|emph)\{(.*?)\}', r'\1', clean_region)
+                        clean_region = re.sub(r'\\[a-zA-Z]+\*?(\[.*?\])?\{([^{}]*)\}', r'\2', clean_region)
+                        clean_region = re.sub(r'\{|\}', ' ', clean_region)
+                        clean_region = re.sub(r'\\\\|\n+', ' ', clean_region)
+                        clean_region = re.sub(r'\s+', ' ', clean_region).strip()
+                        return clean_region
+            except Exception:
+                continue
+        
+        return ""
 
     def __hash__(self):
         """基于arxiv_id生成哈希值，使对象可用于set"""
