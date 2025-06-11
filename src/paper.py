@@ -11,6 +11,7 @@ from requests.adapters import HTTPAdapter, Retry
 from loguru import logger
 import tiktoken
 from contextlib import ExitStack
+from urllib3.util.retry import Retry
 
 
 
@@ -152,9 +153,65 @@ class ArxivPaper:
 
     @cached_property
     def affiliations(self) -> Optional[list[str]]:
-        """获取论文的机构信息，通过合并的LLM调用获取"""
-        affiliations = self.llm_extracted_info.get("affiliations", [])
-        return affiliations if affiliations else None
+        """获取论文的机构信息，通过合并的LLM调用获取，并在失败时回退到Semantic Scholar"""
+        # 首选方法：从 .tex 文件解析
+        affs = self.llm_extracted_info.get("affiliations", [])
+        
+        if affs:
+            return affs
+            
+        # 备用方法：如果首选方法失败，则从 Semantic Scholar 获取
+        logger.debug(f"首选方法提取机构信息失败 for {self.arxiv_id}，尝试从 Semantic Scholar 获取。")
+        affs_fallback = self._fetch_affiliations_from_semantic_scholar()
+        
+        return affs_fallback if affs_fallback else None
+
+    def _fetch_affiliations_from_semantic_scholar(self) -> list[str]:
+        """
+        备用方法：从 Semantic Scholar API 获取作者机构信息。
+        """
+        api_url = f"https://api.semanticscholar.org/graph/v1/paper/arXiv:{self.arxiv_id}?fields=authors.affiliations"
+        try:
+            s = requests.Session()
+            # 设置重试策略，增加网络请求的稳定性
+            retries = Retry(total=3, backoff_factor=0.2, status_forcelist=[500, 502, 503, 504])
+            s.mount('https://', HTTPAdapter(max_retries=retries))
+            
+            response = s.get(api_url, timeout=15)
+            response.raise_for_status()  # 如果请求失败 (4xx or 5xx), 则抛出异常
+            
+            data = response.json()
+            
+            if not data.get('authors'):
+                logger.info(f"Semantic Scholar API for {self.arxiv_id} 未返回作者信息。")
+                return []
+                
+            all_affs = []
+            for author in data['authors']:
+                if author.get('affiliations'):
+                    # `affiliations` 是一个字符串列表
+                    all_affs.extend(author['affiliations'])
+            
+            if not all_affs:
+                logger.info(f"Semantic Scholar 数据中未找到机构信息 for {self.arxiv_id}。")
+                return []
+
+            # 清理和去重，同时保持顺序
+            seen = set()
+            unique_affs = [x for x in all_affs if not (x in seen or seen.add(x))]
+            
+            logger.info(f"成功从 Semantic Scholar 获取到 {self.arxiv_id} 的机构信息: {unique_affs}")
+            return unique_affs
+
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 404:
+                logger.info(f"在 Semantic Scholar 上未找到论文 {self.arxiv_id}。")
+            else:
+                logger.warning(f"从 Semantic Scholar 获取信息时出现HTTP错误 for {self.arxiv_id}: {e}")
+            return []
+        except Exception as e:
+            logger.warning(f"获取或解析 Semantic Scholar 数据时出错 for {self.arxiv_id}: {e}")
+            return []
 
     @cached_property
     def llm_extracted_info(self) -> dict:
