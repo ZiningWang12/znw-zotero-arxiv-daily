@@ -133,7 +133,7 @@ def get_arxiv_papers_by_keywords(arxiv_query_keyword: str, debug: bool = False) 
             logger.info(f"Found {len(batch)} papers for keyword '{arxiv_keyword}'")
             keyword_papers.extend(batch)
     else:
-        keyword_papers = get_arxiv_paper_by_keyword("robotics", debug, max_results=3)
+        keyword_papers = get_arxiv_paper_by_keyword("robotics", debug, max_results=5)
         logger.info(f"Found {len(keyword_papers)} papers for keyword 'robotics'")
     
     return keyword_papers
